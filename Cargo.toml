@@ -12,7 +12,7 @@ homepage = "https://github.com/henrybaxter/beamdpr"
 repository = "https://github.com/henrybaxter/beamdpr"
 
 readme = "README.rst"
-keywords = ["monte carlo", "egsphsp", "beamnrc", "egsnrc", "medical physics", "beamdp"]
+keywords = ["egsphsp", "egsphsp1", "beamdp", "beamnrc", "egsnrc"]
 
 [dependencies]
 byteorder = "0.5"

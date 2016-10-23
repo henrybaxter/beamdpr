@@ -1,0 +1,28 @@
+[package]
+
+name = "beamdpr"
+description = "Combine and transform egsphsp (EGS phase space) files for use with BEAMnrc"
+authors = ["Henry Baxter <henry.baxter@gmail.com>"]
+license = "MIT"
+version = "0.1.0"
+
+
+documentation = "https://github.com/henrybaxter/beamdpr"
+homepage = "https://github.com/henrybaxter/beamdpr"
+repository = "https://github.com/henrybaxter/beamdpr"
+
+readme = "README.rst"
+keywords = ["monte carlo", "egsphsp", "beamnrc", "egsnrc", "medical physics", "beamdp"]
+
+[dependencies]
+byteorder = "0.5"
+clap = "2"
+float-cmp = "0.2"
+
+[lib]
+name = "egsphsp"
+path = "src/lib.rs"
+
+[[bin]]
+name = "beamdpr"
+path = "src/bin.rs"

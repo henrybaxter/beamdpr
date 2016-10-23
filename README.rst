@@ -9,6 +9,17 @@ Combine and transform egsphsp (EGS phase space) files.
 .. image:: https://img.shields.io/crates/v/beamdpr.svg
     :target: https://crates.io/crates/beamdpr
 
+
+Preview:
+
+.. code-block:: bash
+
+    $ beamdpr translate -i first.egsphsp -x 2.3
+    Done :)
+
+Now ``first.egsphsp`` has been translated 2.3 cm in the positive x direction.
+
+
 Installation
 ============
 
@@ -70,7 +81,7 @@ Now translate it 23 in the x direction and -5.7 in the y:
 
 .. code-block:: bash
 
-    $ beamdpr translate first.egsphsp -x 23 -y -5.7
+    $ beamdpr translate first.egsphsp translated.egsphsp -x 23 -y -5.7
     Done :)
 
 And there you have it :

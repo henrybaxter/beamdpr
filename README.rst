@@ -25,26 +25,29 @@ Start by typing ``beamdpr`` at the terminal/command line. If that does not work,
 Combine
 -------
 
-Let's assume these are your files:
+Assume these are your files:
 
 .. code-block:: bash
 
     $ ls
     first.egsphsp second.egsphsp
 
-So make a combined version:
+Make a combined version:
 
 .. code-block:: bash
 
     $ beamdpr combine *.egsphsp -o combined.egsphsp
     Done :)
 
-Sure enough if it's there:
+And there it is:
 
 .. code-block:: bash
 
     $ ls
     combined.egsphsp first.egsphsp second.egsphsp
+
+**NOTE:** This will work with any number of files, as long as their mode matches. That means either they all have ZLAST or none of them do.
+
 
 Translate
 ---------
@@ -69,6 +72,8 @@ And there you have it :
 
     $ ls
     first.egsphsp translated.egsphsp
+
+**NOTE::** You may omit an argument if you only want to translate in one direction.
 
 Rotate
 ------
@@ -95,8 +100,12 @@ It's all done!
     first.egsphsp rotated.egsphsp
 
 
+**NOTE:** If you rotate by 2π (6.28318530718) the file should be unchanged right? Not quite. Due to floating point vagaries there will be minor binary differences, but the value differences will be negligible.
+
+
 Reflect
 -------
+
 Let's assume this is your file:
 
 .. code-block:: bash
@@ -104,7 +113,7 @@ Let's assume this is your file:
     $ ls first.egsphsp
     first.egsphsp
 
-Now reflect in the vector (1, 0):
+Now reflect around the vector (1, 0):
 
 .. code-block:: bash
 
@@ -113,10 +122,12 @@ Now reflect in the vector (1, 0):
 
 All set!
 
-.. code-block: bash
+.. code-block:: bash
 
     $ ls
     first.egsphsp reflected.egsphsp
+
+**NOTE:** This effectively changed the sign of all y values and y directions.
 
 
 In-place

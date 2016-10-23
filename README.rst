@@ -3,6 +3,9 @@ beamdpr
 
 Combine and transform egsphsp (EGS phase space) files.
 
+.. image:: https://travis-ci.org/henrybaxter/beamdpr.svg?branch=master
+    :target: https://travis-ci.org/henrybaxter/beamdpr
+
 
 Installation
 ============

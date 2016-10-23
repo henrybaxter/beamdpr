@@ -17,6 +17,8 @@ Installation
 
 3. All done. ``beamdpr`` should work. If not, `please file an issue! <https://github.com/henrybaxter/beamdpr/issues/new>`_
 
+Integration with homebrew is on the list - but I need more stars. So star this repo if you want a homebrew package!
+
 Usage
 =====
 
@@ -56,7 +58,7 @@ Let's assume this is your file:
 
 .. code-block:: bash
 
-    $ ls first.egsphsp
+    $ ls
     first.egsphsp
 
 Now translate it 23 in the x direction and -5.7 in the y:
@@ -68,7 +70,7 @@ Now translate it 23 in the x direction and -5.7 in the y:
 
 And there you have it :
 
-.. code-block: bash
+.. code-block:: bash
 
     $ ls
     first.egsphsp translated.egsphsp
@@ -94,7 +96,7 @@ Now rotate .9 radians in the counter-clockwise direction:
 
 It's all done!
 
-.. code-block: bash
+.. code-block:: bash
 
     $ ls
     first.egsphsp rotated.egsphsp

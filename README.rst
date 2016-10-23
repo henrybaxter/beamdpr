@@ -10,8 +10,8 @@ Combine and transform egsphsp (EGS phase space) files.
     :target: https://crates.io/crates/beamdpr
 
 
-
-Preview:
+Preview
+-------
 
 .. code-block:: bash
 

@@ -20,6 +20,7 @@ fn main() {
         .about("Combine and transform egsphsp (EGS phase space) \
                 files")
         .setting(AppSettings::SubcommandRequiredElseHelp)
+        .setting(AppSettings::AllowLeadingHyphen)
         .subcommand(SubCommand::with_name("combine")
             .about("Combine phase space from one or more input files into outputfile - does not \
                     adjust weights")
@@ -44,11 +45,13 @@ fn main() {
             .arg(Arg::with_name("x")
                 .short("x")
                 .takes_value(true)
-                .required_unless("y"))
+                .required_unless("y")
+                .default_value("0"))
             .arg(Arg::with_name("y")
                 .short("y")
                 .takes_value(true)
-                .required_unless("x"))
+                .required_unless("x")
+                .default_value("0"))
             .arg(Arg::with_name("input")
                 .help("Phase space file")
                 .required(true))

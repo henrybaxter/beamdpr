@@ -225,7 +225,9 @@ pub fn parse_header(path: &Path) -> EGSResult<Header> {
     let mut buffer = [0; HEADER_LENGTH];
     try!(file.read_exact(&mut buffer));
     let header = try!(Header::new_from_bytes(&buffer));
+    println!("header: {:?}", header);
     let metadata = try!(file.metadata());
+    println!("expected bytes: {:?}, found bytes: {:?}", header.expected_bytes(), metadata.len());
     if metadata.len() != header.expected_bytes() {
         Err(EGSError::BadLength)
     } else {
@@ -297,10 +299,13 @@ pub fn combine(input_paths: &[&Path],
     for path in input_paths.iter() {
         let mut in_file = try!(File::open(path));
         try!(in_file.seek(SeekFrom::Start(offset as u64)));
+        println!("working on path {:?}", path);
         let mut read = try!(in_file.read(&mut buffer));
         while read != 0 {
+            println!("read = {:?}, writing...", read);
             try!(out_file.write(&buffer[..read]));
             read = try!(in_file.read(&mut buffer));
+            println!("read now {:?}", read);
         }
         if delete_after_read {
             drop(in_file);

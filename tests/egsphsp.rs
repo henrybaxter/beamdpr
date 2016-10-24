@@ -102,6 +102,16 @@ fn combine_operation_matches_beamdp() {
 }
 
 #[test]
+fn combine_just_one() {
+    let input_paths = vec![Path::new("test_data/first.egsphsp")];
+    let output_path = Path::new("test_data/test_combine_one.egsphsp");
+    let expected_path = Path::new("test_data/first.egsphsp");
+    combine(&input_paths, output_path, false).unwrap();
+    assert!(identical(output_path, expected_path));
+    remove_file(output_path).unwrap();
+}
+
+#[test]
 fn combine_delete_flag() {
     let input_path = Path::new("test_data/first.egsphsp");
     let mut input_paths = Vec::new();

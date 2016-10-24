@@ -121,7 +121,7 @@ fn main() {
                 if sub_matches.is_present("in-place") {
                     transform_in_place(input_path, &matrix)
                 } else {
-                    let output_path = Path::new(sub_matches.value_of("input").unwrap());
+                    let output_path = Path::new(sub_matches.value_of("output").unwrap());
                     transform(input_path, output_path, &matrix)
                 }
             }
@@ -134,7 +134,8 @@ fn main() {
                 if sub_matches.is_present("in-place") {
                     transform_in_place(input_path, &matrix)
                 } else {
-                    let output_path = Path::new(sub_matches.value_of("input").unwrap());
+                    let output_path = Path::new(sub_matches.value_of("output").unwrap());
+                    println!("Reflecting {:?} and writing to {:?}", input_path, output_path);
                     transform(input_path, output_path, &matrix)
                 }
             }
@@ -146,7 +147,7 @@ fn main() {
                 if sub_matches.is_present("in-place") {
                     transform_in_place(input_path, &matrix)
                 } else {
-                    let output_path = Path::new(sub_matches.value_of("input").unwrap());
+                    let output_path = Path::new(sub_matches.value_of("output").unwrap());
                     transform(input_path, output_path, &matrix)
                 }
             }

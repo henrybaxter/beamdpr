@@ -11,7 +11,7 @@ Combine and transform egsphsp (EGS phase space) files.
 
 
 How it works
-~~~~~~~~~~~~
+------------
 
 .. code-block:: bash
 

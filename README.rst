@@ -25,6 +25,7 @@ Installation
 ============
 
 Homebrew:
+
 .. code-block:: bash
 
     brew tap henrybaxter/tap

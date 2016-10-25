@@ -82,7 +82,7 @@ Now translate it 23 in the x direction and -5.7 in the y:
 
 .. code-block:: bash
 
-    $ beamdpr translate first.egsphsp translated.egsphsp -x 23 -y -5.7
+    $ beamdpr translate first.egsphsp translated.egsphsp -x 23 -y (-5.7)
     Done :)
 
 And there you have it :
@@ -92,7 +92,7 @@ And there you have it :
     $ ls
     first.egsphsp translated.egsphsp
 
-**NOTE::** You may omit an argument if you only want to translate in one direction.
+**NOTE:** Negative numbers must have parantheses around them. You may omit an argument if you only want to translate in one direction.
 
 Rotate
 ------
@@ -163,10 +163,10 @@ Reflect in the vector (-1, 0) in-place:
 
 .. code-block:: bash
 
-    $ beamdpr rotate first.egsphsp -i -x 1
+    $ beamdpr rotate first.egsphsp -i -x (-1)
     Done :)
 
-Note that ``-i`` is the same as ``--in-place``.
+**NOTE:** Negative numbers are input using parantheses, and ``-i`` is the same as ``--in-place``.
 
 Delete after reading
 --------------------

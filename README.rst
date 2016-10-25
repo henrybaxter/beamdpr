@@ -10,8 +10,8 @@ Combine and transform egsphsp (EGS phase space) files.
     :target: https://crates.io/crates/beamdpr
 
 
-Preview
--------
+How it works
+~~~~~~~~~~~~
 
 .. code-block:: bash
 
@@ -25,6 +25,7 @@ Installation
 ============
 
 Homebrew:
+.. code-block:: bash
 
     brew tap henrybaxter/tap
     brew install beamdpr

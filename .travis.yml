@@ -1,4 +1,5 @@
 language: rust
+cache: cargo
 rust:
   - stable
   - beta
@@ -6,3 +7,12 @@ rust:
 matrix:
   allow_failures:
     - rust: nightly
+addons:
+  apt:
+    sources:
+      - deadsnakes
+    packages:
+      - python3.5
+script:
+  - cargo test
+  - python3 test.py

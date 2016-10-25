@@ -15,4 +15,4 @@ addons:
       - python3.5
 script:
   - cargo test
-  - python3 test.py
+  - python3.5 test.py

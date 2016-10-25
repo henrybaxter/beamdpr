@@ -24,6 +24,13 @@ Now ``first.egsphsp`` has been translated 2.3 cm in the positive x direction.
 Installation
 ============
 
+Homebrew:
+
+    brew tap henrybaxter/tap
+    brew install beamdpr
+
+Anything else:
+
 1. Install rust for your system
 
     https://www.rust-lang.org/en-US/downloads.html
@@ -34,7 +41,6 @@ Installation
 
 3. All done. ``beamdpr`` should work. If not, `please file an issue! <https://github.com/henrybaxter/beamdpr/issues/new>`_
 
-Integration with homebrew is on the list - but I need more stars. So star this repo if you want a homebrew package!
 
 Usage
 =====

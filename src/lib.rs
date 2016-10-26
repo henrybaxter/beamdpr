@@ -2,7 +2,6 @@ extern crate byteorder;
 extern crate float_cmp;
 
 use std::error::Error;
-use std::fs::OpenOptions;
 use std::fs::File;
 use std::io::prelude::*;
 use std::path::Path;
@@ -32,12 +31,12 @@ pub struct Header {
 #[derive(Debug)]
 pub struct Record {
     latch: u32,
-    total_energy: f32,
-    x_cm: f32,
-    y_cm: f32,
-    x_cos: f32, // TODO verify these are normalized
-    y_cos: f32,
-    weight: f32, // also carries the sign of the z direction, yikes
+    pub total_energy: f32,
+    pub x_cm: f32,
+    pub y_cm: f32,
+    pub x_cos: f32, // TODO verify these are normalized
+    pub y_cos: f32,
+    pub weight: f32, // also carries the sign of the z direction, yikes
     zlast: Option<f32>,
 }
 
@@ -107,8 +106,8 @@ impl Header {
     pub fn similar_to(&self, other: &Header) -> bool {
         self.mode == other.mode && self.total_particles == other.total_particles &&
         self.total_photons == other.total_photons &&
-        self.max_energy.approx_eq_ulps(&other.max_energy, 2) &&
-        self.min_energy.approx_eq_ulps(&other.min_energy, 2) &&
+        self.max_energy.approx_eq_ulps(&other.max_energy, 10) &&
+        self.min_energy.approx_eq_ulps(&other.min_energy, 10) &&
         self.total_particles_in_source.approx_eq_ulps(&other.total_particles_in_source, 2)
     }
     fn new_from_bytes(bytes: &[u8]) -> EGSResult<Header> {
@@ -152,10 +151,10 @@ impl Header {
 
 impl Record {
     pub fn similar_to(&self, other: &Record) -> bool {
-        self.latch == other.latch && self.total_energy - other.total_energy < 0.0001 &&
-        self.x_cm - other.x_cm < 0.0001 && self.y_cm - other.y_cm < 0.0001 &&
-        self.x_cos - other.x_cos < 0.0001 && self.y_cos - other.y_cos < 0.0001 &&
-        self.weight - other.weight < 0.0001 && self.zlast == other.zlast
+        self.latch == other.latch && self.total_energy - other.total_energy < 0.01 &&
+        self.x_cm - other.x_cm < 0.01 && self.y_cm - other.y_cm < 0.01 &&
+        self.x_cos - other.x_cos < 0.01 && self.y_cos - other.y_cos < 0.01 &&
+        self.weight - other.weight < 0.01 && self.zlast == other.zlast
     }
     fn new_from_bytes(buffer: &[u8], using_zlast: bool) -> Record {
         Record {
@@ -186,6 +185,13 @@ impl Record {
         }
     }
 
+    fn translate(buffer: &mut [u8], x: f32, y: f32) {
+        let new_x = LittleEndian::read_f32(&buffer[8..12]) + x;
+        let new_y = LittleEndian::read_f32(&buffer[12..16]) + y;
+        LittleEndian::write_f32(&mut buffer[8..12],  new_x);
+        LittleEndian::write_f32(&mut buffer[12..16], new_y);
+    }
+
     fn transform(buffer: &mut [u8], matrix: &[[f32; 3]; 3]) {
         let mut x = LittleEndian::read_f32(&buffer[8..12]);
         let mut y = LittleEndian::read_f32(&buffer[12..16]);
@@ -210,9 +216,6 @@ impl Transform {
         *matrix =
             [[x * x - y * y, 2.0 * x * y, 0.0], [2.0 * x * y, y * y - x * x, 0.0], [0.0, 0.0, 1.0]];
     }
-    pub fn translation(matrix: &mut [[f32; 3]; 3], x: f32, y: f32) {
-        *matrix = [[1.0, 0.0, x], [0.0, 1.0, y], [0.0, 0.0, 1.0]];
-    }
     pub fn rotation(matrix: &mut [[f32; 3]; 3], theta: f32) {
         *matrix =
             [[theta.cos(), -theta.sin(), 0.0], [theta.sin(), theta.cos(), 0.0], [0.0, 0.0, 1.0]];
@@ -227,6 +230,7 @@ pub fn parse_header(path: &Path) -> EGSResult<Header> {
     let header = try!(Header::new_from_bytes(&buffer));
     let metadata = try!(file.metadata());
     if metadata.len() != header.expected_bytes() {
+        println!("expected {}, got {} bytes in file", header.expected_bytes(), metadata.len());
         Err(EGSError::BadLength)
     } else {
         Ok(header)
@@ -234,20 +238,14 @@ pub fn parse_header(path: &Path) -> EGSResult<Header> {
 }
 
 pub fn parse_records(path: &Path, header: &Header) -> EGSResult<Vec<Record>> {
-    let mut file = try!(File::open(&path));
-    let mut buffer = [0; BUFFER_SIZE];
-    let mut records = Vec::new();
-    let mut offset = header.record_length as usize;
-    let mut read = try!(file.read(&mut buffer));
-    while read != 0 {
-        let number_records = (read - offset) / header.record_length as usize;
-        for i in 0..number_records {
-            let index = offset + i * header.record_length as usize;
-            let record = Record::new_from_bytes(&mut buffer[index..], header.using_zlast());
-            records.push(record);
-        }
-        offset = (read - offset) % header.record_length as usize;
-        read = try!(file.read(&mut buffer));
+    let mut buffer = Vec::with_capacity((header.total_particles * header.record_length) as usize);
+    let mut records = Vec::with_capacity(header.total_particles_in_source as usize);
+    let mut ifile = try!(File::open(path));
+    try!(ifile.seek(SeekFrom::Start(header.record_length as u64)));
+    try!(ifile.read_to_end(&mut buffer));
+    drop(ifile);
+    for chunk in buffer.chunks_mut(header.record_length as usize) {
+        records.push(Record::new_from_bytes(&chunk, header.using_zlast()));
     }
     Ok(records)
 }
@@ -259,17 +257,16 @@ pub fn read_file(path: &Path) -> EGSResult<(Header, Vec<Record>)> {
 }
 
 pub fn write_file(path: &Path, header: &Header, records: &[Record]) -> EGSResult<()> {
-    let mut file = try!(File::create(&path));
-    let mut buffer = [0; BUFFER_SIZE];
-    let mut index = 0 as usize;
-    for i in 0..records.len() {
-        while index < buffer.len() - header.record_length as usize {
-            records[i].write_to_bytes(&mut buffer[index..], header.using_zlast());
-            index += header.record_length as usize;
-        }
-        try!(file.write(&buffer[..index]));
-        index = 0;
+    let mut buffer = Vec::with_capacity((header.total_particles * header.record_length) as usize);
+    for (record, mut chunk) in records.iter().zip(buffer.chunks_mut(header.record_length as usize)) {
+        record.write_to_bytes(&mut chunk, header.using_zlast());
     }
+    let mut header_buffer = [0; HEADER_LENGTH];
+    header.write_to_bytes(&mut header_buffer);
+    let mut ofile = try!(File::create(path));
+    try!(ofile.write_all(&header_buffer));
+    try!(ofile.seek(SeekFrom::Start(header.record_length as u64)));
+    try!(ofile.write_all(&buffer));
     Ok(())
 }
 
@@ -310,44 +307,40 @@ pub fn combine(input_paths: &[&Path],
     Ok(())
 }
 
-pub fn transform(input_path: &Path, output_path: &Path, matrix: &[[f32; 3]; 3]) -> EGSResult<()> {
+pub fn translate(input_path: &Path, output_path: &Path, x: f32, y: f32) -> EGSResult<()> {
     let header = try!(parse_header(input_path));
-    let mut input_file = try!(File::open(&input_path));
-    let mut output_file = try!(File::create(&output_path));
-    let mut buffer = [0; BUFFER_SIZE];
-    let mut read = try!(input_file.read(&mut buffer));
-    let mut offset = header.record_length as usize;
-    while read != 0 {
-        let number_records = (read - offset) / header.record_length as usize;
-        for i in 0..number_records {
-            let index = offset + i * header.record_length as usize;
-            Record::transform(&mut buffer[index..], &matrix);
-        }
-        offset = (read - offset) % header.record_length as usize;
-        try!(output_file.write(&buffer[..read]));
-        read = try!(input_file.read(&mut buffer));
+    let mut buffer = Vec::with_capacity((header.total_particles * header.record_length) as usize);
+    let mut ifile = try!(File::open(input_path));
+    try!(ifile.seek(SeekFrom::Start(header.record_length as u64)));
+    try!(ifile.read_to_end(&mut buffer));
+    drop(ifile);
+    for mut chunk in buffer.chunks_mut(header.record_length as usize) {
+        Record::translate(&mut chunk, x, y);
     }
+    let mut header_buffer = [0; HEADER_LENGTH];
+    header.write_to_bytes(&mut header_buffer);
+    let mut ofile = try!(File::create(output_path));
+    try!(ofile.write_all(&header_buffer));
+    try!(ofile.seek(SeekFrom::Start(header.record_length as u64)));
+    try!(ofile.write_all(&buffer));
     Ok(())
 }
 
-pub fn transform_in_place(path: &Path, matrix: &[[f32; 3]; 3]) -> EGSResult<()> {
-    let header = try!(parse_header(path));
-    let mut file = try!(OpenOptions::new().read(true).write(true).open(&path));
-    let mut buffer = [0; BUFFER_SIZE];
-    let mut read = try!(file.read(&mut buffer));
-    let mut offset = header.record_length as usize;
-    let mut position = 0;
-    while read != 0 {
-        let number_records = (read - offset) / header.record_length as usize;
-        for i in 0..number_records {
-            let index = offset + i * header.record_length as usize;
-            Record::transform(&mut buffer[index..], &matrix);
-        }
-        offset = (read - offset) % header.record_length as usize;
-        position = try!(file.seek(SeekFrom::Start(position)));
-        try!(file.write(&buffer[..read]));
-        position += read as u64;
-        read = try!(file.read(&mut buffer));
+pub fn transform(input_path: &Path, output_path: &Path, matrix: &[[f32; 3]; 3]) -> EGSResult<()> {
+    let header = try!(parse_header(input_path));
+    let mut buffer = Vec::with_capacity((header.total_particles * header.record_length) as usize);
+    let mut ifile = try!(File::open(input_path));
+    try!(ifile.seek(SeekFrom::Start(header.record_length as u64)));
+    try!(ifile.read_to_end(&mut buffer));
+    drop(ifile);
+    for mut chunk in buffer.chunks_mut(header.record_length as usize) {
+        Record::transform(&mut chunk, &matrix);
     }
+    let mut header_buffer = [0; HEADER_LENGTH];
+    header.write_to_bytes(&mut header_buffer);
+    let mut ofile = try!(File::create(output_path));
+    try!(ofile.write_all(&header_buffer));
+    try!(ofile.seek(SeekFrom::Start(header.record_length as u64)));
+    try!(ofile.write_all(&buffer));
     Ok(())
 }

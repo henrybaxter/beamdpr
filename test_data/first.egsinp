@@ -1,31 +1,30 @@
 TUMOTRAK                                                                         #!GUI1.0
 VACUUM
-4, 0, 0, 0, 0, 2, 0,  IWATCH ETC.
-100, 33, 97, 500, 1, 200, 2, 0,  NCASE ETC.
+0, 0, 0, 0, 0, 2, 0,  IWATCH ETC.
+10000, 33, 97, 500, 1, 200, 2, 0,  NCASE ETC.
 -1, 13, 0.1, 0.1, -1, 0,  0.0, 0.0, 0.0, 0.0,  IQIN, ISOURCE + OPTIONS
 0, MONOENERGETIC
 0.200
 0, 0, 0.521, 0.01, 0, 0, ,  0 , ECUT,PCUT,IREJCT,ESAVE
 0, 0, 0, 0, 0,  PHOTON FORCING
-1, 1, SCORING INPUT
+1, 1,  SCORING INPUT
 1, 1
 2,
 0,  DOSE COMPONENTS
 0.0, Z TO FRONT FACE
 *********** start of CM XTUBE with identifier TUBE  ***********
-37.50, RMAX
-XTUBE
-0, 4, ZMIN, ZTHICK
-45, ANGLE
+2, RMAX
+TUMOTARGET
+0, 2, ZMIN, ZTHICK
+0, ANGLE
 1, # LAYERS
 0.2, 0
-0.521, 0.01, 0, 0, 
+0.521, 0.01, 0, 0,
 W_516kV
-0.521, 0.01, 0, 0, 
+0.521, 0.01, 0, 0,
 VACUUM
-0.521, 0.01, 0, 0, 
+0.521, 0.01, 0, 0,
 CU521xcom
-*********************end of all CMs*****************************
  #########################
  :Start MC Transport Parameter:
 

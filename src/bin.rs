@@ -5,13 +5,14 @@ extern crate egsphsp;
 use std::path::Path;
 use std::error::Error;
 use std::process::exit;
+use std::f32;
 
 use clap::{App, AppSettings, SubCommand, Arg};
 
 use egsphsp::Transform;
 use egsphsp::combine;
 use egsphsp::transform;
-use egsphsp::transform_in_place;
+use egsphsp::translate;
 use egsphsp::parse_header;
 use egsphsp::parse_records;
 
@@ -32,6 +33,10 @@ fn main() {
             .arg(Arg::with_name("first")
                 .required(true))
             .arg(Arg::with_name("second")
+                .required(true)))
+        .subcommand(SubCommand::with_name("stats")
+            .about("Stats on phase space file")
+            .arg(Arg::with_name("input")
                 .required(true)))
         .subcommand(SubCommand::with_name("combine")
             .about("Combine phase space from one or more input files into outputfile - does not \
@@ -152,6 +157,25 @@ fn main() {
             }
         }
         Ok(())
+    } else if subcommand == "stats" {
+        let sub_matches = matches.subcommand_matches("stats").unwrap();
+        let path = Path::new(sub_matches.value_of("input").unwrap());
+        let header = parse_header(path).unwrap();
+        let records = parse_records(path, &header).unwrap();
+        // greatest and smallest value of x and y
+        let mut max_x = f32::MIN;
+        let mut min_x = f32::MAX;
+        let mut max_y = f32::MIN;
+        let mut min_y = f32::MAX;
+        // let mut total = 0.0 as f32;
+        for record in records.iter() {
+            max_x = max_x.max(record.x_cm);
+            min_x = min_x.min(record.x_cm);
+            max_y = max_y.max(record.y_cm);
+            min_y = min_y.min(record.y_cm);
+        }
+        println!("x in [{}, {}], y in [{}, {}]", min_x, max_x, min_y, max_y);
+        Ok(())
     } else {
         let mut matrix = [[0.0; 3]; 3];
         match subcommand {
@@ -160,15 +184,14 @@ fn main() {
                 let sub_matches = matches.subcommand_matches("translate").unwrap();
                 let x = floatify(sub_matches.value_of("x").unwrap());
                 let y = floatify(sub_matches.value_of("y").unwrap());
-                Transform::translation(&mut matrix, x, y);
                 let input_path = Path::new(sub_matches.value_of("input").unwrap());
                 if sub_matches.is_present("in-place") {
                     println!("translate {} by ({}, {})", input_path.display(), x, y);
-                    transform_in_place(input_path, &matrix)
+                    translate(input_path, input_path, x, y)
                 } else {
                     let output_path = Path::new(sub_matches.value_of("output").unwrap());
                     println!("translate {} by ({}, {}) and write to {}", input_path.display(), x, y, output_path.display());
-                    transform(input_path, output_path, &matrix)
+                    translate(input_path, output_path, x, y)
                 }
             }
             "reflect" => {
@@ -180,7 +203,7 @@ fn main() {
                 let input_path = Path::new(sub_matches.value_of("input").unwrap());
                 if sub_matches.is_present("in-place") {
                     println!("reflect {} around ({}, {})", input_path.display(), x, y);
-                    transform_in_place(input_path, &matrix)
+                    transform(input_path, input_path, &matrix)
                 } else {
                     let output_path = Path::new(sub_matches.value_of("output").unwrap());
                     println!("reflect {} around ({}, {}) and write to {}", input_path.display(), x, y, output_path.display());
@@ -195,7 +218,7 @@ fn main() {
                 let input_path = Path::new(sub_matches.value_of("input").unwrap());
                 if sub_matches.is_present("in-place") {
                     println!("rotate {} by {} radians", input_path.display(), angle);
-                    transform_in_place(input_path, &matrix)
+                    transform(input_path, input_path, &matrix)
                 } else {
                     let output_path = Path::new(sub_matches.value_of("output").unwrap());
                     println!("rotate {} by {} radians and write to {}", input_path.display(), angle, output_path.display());

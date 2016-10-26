@@ -15,10 +15,10 @@ How it works
 
 .. code-block:: bash
 
-    $ beamdpr translate -i first.egsphsp -x 2.3
+    $ beamdpr translate -i first.egsphsp1 -x 2.3
     Done :)
 
-Now ``first.egsphsp`` has been translated 2.3 cm in the positive x direction.
+Now ``first.egsphsp1`` has been translated 2.3 cm in the positive x direction.
 
 
 Installation
@@ -57,13 +57,13 @@ Assume these are your files:
 .. code-block:: bash
 
     $ ls
-    first.egsphsp second.egsphsp
+    first.egsphsp1 second.egsphsp1
 
 Make a combined version:
 
 .. code-block:: bash
 
-    $ beamdpr combine *.egsphsp -o combined.egsphsp
+    $ beamdpr combine *.egsphsp1 -o combined.egsphsp1
     Done :)
 
 And there it is:
@@ -71,7 +71,7 @@ And there it is:
 .. code-block:: bash
 
     $ ls
-    combined.egsphsp first.egsphsp second.egsphsp
+    combined.egsphsp1 first.egsphsp1 second.egsphsp1
 
 **NOTE:** This will work with any number of files, as long as their mode matches. That means either they all have ZLAST or none of them do.
 
@@ -84,13 +84,13 @@ Let's assume this is your file:
 .. code-block:: bash
 
     $ ls
-    first.egsphsp
+    first.egsphsp1
 
 Now translate it 23 in the x direction and -5.7 in the y:
 
 .. code-block:: bash
 
-    $ beamdpr translate first.egsphsp translated.egsphsp -x 23 -y (-5.7)
+    $ beamdpr translate first.egsphsp1 translated.egsphsp1 -x 23 -y (-5.7)
     Done :)
 
 And there you have it :
@@ -98,7 +98,7 @@ And there you have it :
 .. code-block:: bash
 
     $ ls
-    first.egsphsp translated.egsphsp
+    first.egsphsp1 translated.egsphsp1
 
 **NOTE:** Negative numbers must have parantheses around them. You may omit an argument if you only want to translate in one direction.
 
@@ -109,14 +109,14 @@ Let's assume this is your file:
 
 .. code-block:: bash
 
-    $ ls first.egsphsp
-    first.egsphsp
+    $ ls first.egsphsp1
+    first.egsphsp1
 
 Now rotate .9 radians in the counter-clockwise direction:
 
 .. code-block:: bash
 
-    $ beamdpr rotate first.egsphsp rotated.egsphsp --angle .9
+    $ beamdpr rotate first.egsphsp1 rotated.egsphsp1 --angle .9
     Done :)
 
 It's all done!
@@ -124,7 +124,7 @@ It's all done!
 .. code-block:: bash
 
     $ ls
-    first.egsphsp rotated.egsphsp
+    first.egsphsp1 rotated.egsphsp1
 
 
 **NOTE:** If you rotate by 2π (6.28318530718) the file should be unchanged right? Not quite. Due to floating point vagaries there will be minor binary differences, but the value differences will be negligible.
@@ -137,14 +137,14 @@ Let's assume this is your file:
 
 .. code-block:: bash
 
-    $ ls first.egsphsp
-    first.egsphsp
+    $ ls first.egsphsp1
+    first.egsphsp1
 
 Now reflect around the vector (1, 0):
 
 .. code-block:: bash
 
-    $ beamdpr rotate first.egsphsp reflected.egsphsp -x 1
+    $ beamdpr rotate first.egsphsp1 reflected.egsphsp1 -x 1
     Done :)
 
 All set!
@@ -152,7 +152,7 @@ All set!
 .. code-block:: bash
 
     $ ls
-    first.egsphsp reflected.egsphsp
+    first.egsphsp1 reflected.egsphsp1
 
 **NOTE:** This effectively changed the sign of all y values and y directions.
 
@@ -164,14 +164,14 @@ Any of these transform operations can be done **in-place** - that is, by modifyi
 
 .. code-block:: bash
 
-    $ ls first.egsphsp
-    first.egsphsp
+    $ ls first.egsphsp1
+    first.egsphsp1
 
 Reflect in the vector (-1, 0) in-place:
 
 .. code-block:: bash
 
-    $ beamdpr rotate first.egsphsp -i -x (-1)
+    $ beamdpr rotate first.egsphsp1 -i -x (-1)
     Done :)
 
 **NOTE:** Negative numbers are input using parantheses, and ``-i`` is the same as ``--in-place``.
@@ -184,19 +184,19 @@ During a combine operation you may worry about disk space (10x10gb of phase spac
 .. code-block:: bash
 
     $ ls
-    first.egsphsp second.egsphsp
+    first.egsphsp1 second.egsphsp1
 
 So make a combined version:
 
 .. code-block:: bash
 
-    $ beamdpr combine *.egsphsp -o combined.egsphsp -d
+    $ beamdpr combine *.egsphsp1 -o combined.egsphsp1 -d
     Done :)
 
 .. code-block:: bash
 
     $ ls
-    combined.egsphsp
+    combined.egsphsp1
 
 
 Help

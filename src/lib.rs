@@ -30,14 +30,14 @@ pub struct Header {
 
 #[derive(Debug)]
 pub struct Record {
-    latch: u32,
+    pub latch: u32,
     pub total_energy: f32,
     pub x_cm: f32,
     pub y_cm: f32,
     pub x_cos: f32, // TODO verify these are normalized
     pub y_cos: f32,
     pub weight: f32, // also carries the sign of the z direction, yikes
-    zlast: Option<f32>,
+    pub zlast: Option<f32>,
 }
 
 #[derive(Debug)]
@@ -171,6 +171,30 @@ impl Record {
                 None
             },
         }
+    }
+    pub fn bremsstrahlung_or_annihilation(&self) -> bool {
+        self.latch & 1 != 0
+    }
+    pub fn bit_region(&self) -> u32 {
+        self.latch & 0xfffffe
+    }
+    pub fn region_number(&self) -> u32 {
+        self.latch & 0xf000000
+    }
+    pub fn b29(&self) -> bool {
+        self.latch & (1 << 29) != 0
+    }
+    pub fn charged(&self) -> bool {
+        self.latch & (1 << 30) != 0
+    }
+    pub fn crossed_multiple(&self) -> bool {
+        self.latch & (1 << 30) != 0
+    }
+    pub fn weight(&self) -> f32 {
+        self.weight.abs()
+    }
+    pub fn z_positive(&self) -> bool {
+        self.weight.is_sign_positive()
     }
     fn write_to_bytes(&self, buffer: &mut [u8], using_zlast: bool) {
         LittleEndian::write_u32(&mut buffer[0..4], self.latch);

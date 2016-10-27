@@ -174,7 +174,13 @@ fn main() {
             max_y = max_y.max(record.y_cm);
             min_y = min_y.min(record.y_cm);
         }
-        println!("x in [{}, {}], y in [{}, {}]", min_x, max_x, min_y, max_y);
+        println!("Total particles: {}", header.total_particles);
+        println!("Total photons: {}", header.total_photons);
+        println!("Total electrons/positrons: {}", header.total_particles - header.total_photons);
+        println!("Maximum energy: {:.*} MeV", 4, header.max_energy);
+        println!("Minimum energy: {:.*} MeV", 4, header.min_energy);
+        println!("Incident particles from source: {:.*}", 1, header.total_particles_in_source);
+        println!("X position in [{}, {}], Y position in [{}, {}]", min_x, max_x, min_y, max_y);
         Ok(())
     } else {
         let mut matrix = [[0.0; 3]; 3];

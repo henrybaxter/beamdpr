@@ -13,6 +13,7 @@ use egsphsp::Transform;
 use egsphsp::combine;
 use egsphsp::transform;
 use egsphsp::translate;
+use egsphsp::reflect_x;
 use egsphsp::parse_header;
 use egsphsp::parse_records;
 
@@ -209,11 +210,23 @@ fn main() {
                 let input_path = Path::new(sub_matches.value_of("input").unwrap());
                 if sub_matches.is_present("in-place") {
                     println!("reflect {} around ({}, {})", input_path.display(), x, y);
-                    transform(input_path, input_path, &matrix)
+                    if x == 1.0 {
+                        println!("optimized reflection");
+                        reflect_x(input_path, input_path)
+                    } else {
+                        println!("unoptimized reflection");
+                        transform(input_path, input_path, &matrix)
+                    }
                 } else {
                     let output_path = Path::new(sub_matches.value_of("output").unwrap());
                     println!("reflect {} around ({}, {}) and write to {}", input_path.display(), x, y, output_path.display());
-                    transform(input_path, output_path, &matrix)
+                    if x == 1.0 {
+                        println!("optimized reflection");
+                        reflect_x(input_path, output_path)
+                    } else {
+                        println!("unoptimized reflection");
+                        transform(input_path, output_path, &matrix)
+                    }
                 }
             }
             "rotate" => {

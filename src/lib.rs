@@ -225,6 +225,13 @@ impl Record {
         LittleEndian::write_f32(&mut buffer[12..16], new_y);
     }
 
+    fn reflect_x(buffer: &mut [u8]) {
+        let new_y = -LittleEndian::read_f32(&buffer[12..16]);
+        //let new_x_cos = LittleEndian::read_f32(&buffer[8..12]);
+        //let new_y_cos = LittleEndian::read_f32(&buffer[12..16]);
+        LittleEndian::write_f32(&mut buffer[12..16],  new_y);
+    }
+
     fn transform(buffer: &mut [u8], matrix: &[[f32; 3]; 3]) {
         let mut x = LittleEndian::read_f32(&buffer[8..12]);
         let mut y = LittleEndian::read_f32(&buffer[12..16]);
@@ -349,6 +356,26 @@ pub fn translate(input_path: &Path, output_path: &Path, x: f32, y: f32) -> EGSRe
     drop(ifile);
     for mut chunk in buffer.chunks_mut(header.record_length as usize) {
         Record::translate(&mut chunk, x, y);
+    }
+    let mut header_buffer = [0; HEADER_LENGTH];
+    header.write_to_bytes(&mut header_buffer);
+    let mut ofile = try!(File::create(output_path));
+    try!(ofile.write_all(&header_buffer));
+    try!(ofile.seek(SeekFrom::Start(header.record_length as u64)));
+    try!(ofile.write_all(&buffer));
+    Ok(())
+}
+
+
+pub fn reflect_x(input_path: &Path, output_path: &Path) -> EGSResult<()> {
+    let header = try!(parse_header(input_path));
+    let mut buffer = Vec::with_capacity((header.total_particles * header.record_length) as usize);
+    let mut ifile = try!(File::open(input_path));
+    try!(ifile.seek(SeekFrom::Start(header.record_length as u64)));
+    try!(ifile.read_to_end(&mut buffer));
+    drop(ifile);
+    for mut chunk in buffer.chunks_mut(header.record_length as usize) {
+        Record::reflect_x(&mut chunk);
     }
     let mut header_buffer = [0; HEADER_LENGTH];
     header.write_to_bytes(&mut header_buffer);

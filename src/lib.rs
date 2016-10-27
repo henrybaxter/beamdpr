@@ -31,7 +31,7 @@ pub struct Header {
 #[derive(Debug)]
 pub struct Record {
     pub latch: u32,
-    pub total_energy: f32,
+    total_energy: f32,
     pub x_cm: f32,
     pub y_cm: f32,
     pub x_cos: f32, // TODO verify these are normalized
@@ -151,7 +151,7 @@ impl Header {
 
 impl Record {
     pub fn similar_to(&self, other: &Record) -> bool {
-        self.latch == other.latch && self.total_energy - other.total_energy < 0.01 &&
+        self.latch == other.latch && self.total_energy() - other.total_energy() < 0.01 &&
         self.x_cm - other.x_cm < 0.01 && self.y_cm - other.y_cm < 0.01 &&
         self.x_cos - other.x_cos < 0.01 && self.y_cos - other.y_cos < 0.01 &&
         self.weight - other.weight < 0.01 && self.zlast == other.zlast
@@ -193,8 +193,17 @@ impl Record {
     pub fn weight(&self) -> f32 {
         self.weight.abs()
     }
+    pub fn total_energy(&self) -> f32 {
+        self.total_energy.abs()
+    }
     pub fn z_positive(&self) -> bool {
         self.weight.is_sign_positive()
+    }
+    pub fn z_cos(&self) -> f32 {
+        (1.0 - (self.x_cos * self.x_cos + self.y_cos * self.y_cos)).sqrt()
+    }
+    pub fn first_scored_by_primary_history(&self) -> bool {
+        return self.total_energy.is_sign_negative()
     }
     fn write_to_bytes(&self, buffer: &mut [u8], using_zlast: bool) {
         LittleEndian::write_u32(&mut buffer[0..4], self.latch);

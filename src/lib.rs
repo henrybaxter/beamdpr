@@ -36,7 +36,7 @@ pub struct Record {
     pub y_cm: f32,
     pub x_cos: f32, // TODO verify these are normalized
     pub y_cos: f32,
-    pub weight: f32, // also carries the sign of the z direction, yikes
+    weight: f32, // also carries the sign of the z direction, yikes
     pub zlast: Option<f32>,
 }
 

@@ -1,12 +1,14 @@
 #[macro_use]
 extern crate clap;
 extern crate egsphsp;
+extern crate rand;
 
 use std::path::Path;
 use std::error::Error;
 use std::process::exit;
 use std::f32;
 
+use rand::{thread_rng, Rng};
 use clap::{App, AppSettings, SubCommand, Arg};
 
 use egsphsp::Transform;
@@ -16,6 +18,8 @@ use egsphsp::translate;
 use egsphsp::reflect_x;
 use egsphsp::parse_header;
 use egsphsp::parse_records;
+use egsphsp::read_file;
+use egsphsp::write_file;
 
 fn floatify(s: &str) -> f32 {
     s.trim().trim_left_matches("(").trim_right_matches(")").trim().parse::<f32>().unwrap()
@@ -29,6 +33,10 @@ fn main() {
         .about("Combine and transform egsphsp (EGS phase space) \
                 files")
         .setting(AppSettings::SubcommandRequiredElseHelp)
+        .subcommand(SubCommand::with_name("randomize")
+            .about("Randomize the order of the particles")
+            .arg(Arg::with_name("input")
+                .required(true)))
         .subcommand(SubCommand::with_name("compare")
             .about("Compare two phase space files")
             .arg(Arg::with_name("first")
@@ -130,6 +138,13 @@ fn main() {
         combine(&input_paths,
                 output_path,
                 sub_matches.is_present("delete"))
+    } else if subcommand == "randomize" {
+        let sub_matches = matches.subcommand_matches("randomize").unwrap();
+        let path = Path::new(sub_matches.value_of("input").unwrap());
+        let (header, mut records) = read_file(path).unwrap();
+        let mut rng = thread_rng();
+        rng.shuffle(&mut records);
+        write_file(path, &header, &records)
     } else if subcommand == "compare" {
         // now we're going to print the header information of each
         // and then we're going to return a return code
@@ -152,7 +167,7 @@ fn main() {
             let records2 = parse_records(path2, &header2).unwrap();
             for (record1, record2) in records1.iter().zip(records2.iter()) {
                 if !record1.similar_to(&record2) {
-                    println!("Record different");
+                    println!("{:?} != {:?}", record1, record2);
                     exit_code = 1;
                 }
             }

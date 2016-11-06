@@ -18,6 +18,7 @@ keywords = ["egsphsp", "egsphsp1", "beamdp", "beamnrc", "egsnrc"]
 byteorder = "0.5"
 clap = "2"
 float-cmp = "0.2"
+rand = "0.3"
 
 [lib]
 name = "egsphsp"

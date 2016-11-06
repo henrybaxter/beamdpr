@@ -16,6 +16,8 @@ use float_cmp::ApproxEqUlps;
 
 const BUFFER_SIZE: usize = 1024 * 64;
 const HEADER_LENGTH: usize = 25;
+const NO_ZLAST_RECORD_LENGTH: usize = 28;
+const WITH_ZLAST_RECORD_LENGTH: usize = 32;
 
 #[derive(Debug)]
 pub struct Header {
@@ -298,8 +300,18 @@ pub fn read_file(path: &Path) -> EGSResult<(Header, Vec<Record>)> {
 
 pub fn write_file(path: &Path, header: &Header, records: &[Record]) -> EGSResult<()> {
     let mut buffer = Vec::with_capacity((header.total_particles * header.record_length) as usize);
-    for (record, mut chunk) in records.iter().zip(buffer.chunks_mut(header.record_length as usize)) {
-        record.write_to_bytes(&mut chunk, header.using_zlast());
+    if header.using_zlast() {
+        let mut record_buffer = [0; WITH_ZLAST_RECORD_LENGTH];
+        for record in records.iter() {
+            record.write_to_bytes(&mut record_buffer, header.using_zlast());
+            buffer.extend(&record_buffer);
+        }
+    } else {
+        let mut record_buffer = [0; NO_ZLAST_RECORD_LENGTH];
+        for record in records.iter() {
+            record.write_to_bytes(&mut record_buffer, header.using_zlast());
+            buffer.extend(&record_buffer);
+        }
     }
     let mut header_buffer = [0; HEADER_LENGTH];
     header.write_to_bytes(&mut header_buffer);

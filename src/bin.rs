@@ -50,7 +50,13 @@ fn main() {
         .subcommand(SubCommand::with_name("stats")
             .about("Stats on phase space file")
             .arg(Arg::with_name("input")
-                .required(true)))
+                .required(true))
+            .arg(Arg::with_name("format")
+                .default_value("human")
+                .possible_values(&["human", "json"])
+                .long("format")
+                .takes_value(true)
+                .help("Output stats in json or human format")))
         .subcommand(SubCommand::with_name("combine")
             .about("Combine phase space from one or more input files into outputfile - does not \
                     adjust weights")
@@ -195,13 +201,24 @@ fn main() {
             max_y = max_y.max(record.y_cm);
             min_y = min_y.min(record.y_cm);
         }
-        println!("Total particles: {}", header.total_particles);
-        println!("Total photons: {}", header.total_photons);
-        println!("Total electrons/positrons: {}", header.total_particles - header.total_photons);
-        println!("Maximum energy: {:.*} MeV", 4, header.max_energy);
-        println!("Minimum energy: {:.*} MeV", 4, header.min_energy);
-        println!("Incident particles from source: {:.*}", 1, header.total_particles_in_source);
-        println!("X position in [{}, {}], Y position in [{}, {}]", min_x, max_x, min_y, max_y);
+        if sub_matches.value_of("format").unwrap() == "json" {
+            // TODO use a proper serializer!
+            println!("{{");
+            println!("\t\"total_particles\": {},", header.total_particles);
+            println!("\t\"total_photons\": {},", header.total_photons);
+            println!("\t\"maximum_energy\": {},", header.max_energy);
+            println!("\t\"minimum_energy\": {},", header.min_energy);
+            println!("\t\"total_particles_in_source\": {}", header.total_particles_in_source);
+            println!("}}");
+        } else {
+            println!("Total particles: {}", header.total_particles);
+            println!("Total photons: {}", header.total_photons);
+            println!("Total electrons/positrons: {}", header.total_particles - header.total_photons);
+            println!("Maximum energy: {:.*} MeV", 4, header.max_energy);
+            println!("Minimum energy: {:.*} MeV", 4, header.min_energy);
+            println!("Incident particles from source: {:.*}", 1, header.total_particles_in_source);
+            println!("X position in [{}, {}], Y position in [{}, {}]", min_x, max_x, min_y, max_y);
+        }
         Ok(())
     } else {
         let mut matrix = [[0.0; 3]; 3];
@@ -257,7 +274,7 @@ fn main() {
     };
 
     match result {
-        Ok(()) => println!("Done :)"),
+        Ok(()) => (),
         Err(err) => println!("Problem: {}", err.description()),
     };
     exit(exit_code);

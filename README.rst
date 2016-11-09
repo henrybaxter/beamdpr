@@ -16,7 +16,6 @@ How it works
 .. code-block:: bash
 
     $ beamdpr translate -i first.egsphsp1 -x 2.3
-    Done :)
 
 Now ``first.egsphsp1`` has been translated 2.3 cm in the positive x direction.
 
@@ -64,7 +63,6 @@ Make a combined version:
 .. code-block:: bash
 
     $ beamdpr combine *.egsphsp1 -o combined.egsphsp1
-    Done :)
 
 And there it is:
 
@@ -91,7 +89,6 @@ Now translate it 23 in the x direction and -5.7 in the y:
 .. code-block:: bash
 
     $ beamdpr translate first.egsphsp1 translated.egsphsp1 -x 23 -y (-5.7)
-    Done :)
 
 And there you have it :
 
@@ -117,7 +114,6 @@ Now rotate .9 radians in the counter-clockwise direction:
 .. code-block:: bash
 
     $ beamdpr rotate first.egsphsp1 rotated.egsphsp1 --angle .9
-    Done :)
 
 It's all done!
 
@@ -145,7 +141,6 @@ Now reflect around the vector (1, 0):
 .. code-block:: bash
 
     $ beamdpr rotate first.egsphsp1 reflected.egsphsp1 -x 1
-    Done :)
 
 All set!
 
@@ -172,7 +167,6 @@ Reflect in the vector (-1, 0) in-place:
 .. code-block:: bash
 
     $ beamdpr rotate first.egsphsp1 -i -x (-1)
-    Done :)
 
 **NOTE:** Negative numbers are input using parantheses, and ``-i`` is the same as ``--in-place``.
 
@@ -191,7 +185,6 @@ So make a combined version:
 .. code-block:: bash
 
     $ beamdpr combine *.egsphsp1 -o combined.egsphsp1 -d
-    Done :)
 
 .. code-block:: bash
 

@@ -8,7 +8,7 @@ use std::error::Error;
 use std::process::exit;
 use std::f32;
 
-use rand::{thread_rng, Rng};
+use rand::{SeedableRng, StdRng, Rng};
 use clap::{App, AppSettings, SubCommand, Arg};
 
 use egsphsp::Transform;
@@ -35,7 +35,12 @@ fn main() {
         .subcommand(SubCommand::with_name("randomize")
             .about("Randomize the order of the particles")
             .arg(Arg::with_name("input")
-                .required(true)))
+                .required(true))
+            .arg(Arg::with_name("seed")
+                .long("seed")
+                .help("Seed as an unsigned integer")
+                .default_value("0")
+                .required(false)))
         .subcommand(SubCommand::with_name("compare")
             .about("Compare two phase space files")
             .arg(Arg::with_name("first")
@@ -141,7 +146,8 @@ fn main() {
         let sub_matches = matches.subcommand_matches("randomize").unwrap();
         let path = Path::new(sub_matches.value_of("input").unwrap());
         let (header, mut records) = read_file(path).unwrap();
-        let mut rng = thread_rng();
+        let seed: &[_] = &[sub_matches.value_of("seed").unwrap().parse::<usize>().unwrap()];
+        let mut rng: StdRng = SeedableRng::from_seed(seed);
         rng.shuffle(&mut records);
         write_file(path, &header, &records)
     } else if subcommand == "compare" {

@@ -448,14 +448,16 @@ pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: u32, seed: &[usize])
         assert!(!reader.header.using_zlast);
         println!("Found {} particles", reader.header.total_particles);
         header.total_particles_in_source += reader.header.total_particles_in_source;
-        let records = reader.filter(|_| rng.gen_weighted_bool(10));
+        let records = reader.filter(|_| rng.gen_weighted_bool(rate));
         for record in records.map(|r| r.unwrap()) {
             header.total_particles = header.total_particles.checked_add(1).expect("Total particles overflow");
             if !record.charged() {
                 header.total_photons += 1;
             }
-            header.min_energy = header.min_energy.min(record.total_energy.abs());
-            header.max_energy = header.max_energy.max(record.total_energy.abs());
+            if record.total_energy > 0.0 {
+                header.min_energy = header.min_energy.min(record.total_energy);
+                header.max_energy = header.max_energy.max(record.total_energy);
+            }
             try!(writer.write(&record));
         }
         println!("Now have {} particles", header.total_particles);

@@ -187,20 +187,19 @@ fn main() {
     } else if subcommand == "stats" {
         let sub_matches = matches.subcommand_matches("stats").unwrap();
         let path = Path::new(sub_matches.value_of("input").unwrap());
-        let ifile = File::open(path).unwrap();
-        let header = PHSPReader::from(ifile).unwrap().header;
-        /*let header = ifile.header;
-        let mut max_x = f32::MIN;
+        let reader = PHSPReader::from(File::open(path).unwrap()).unwrap();
+        let header = reader.header;
+        /*let mut max_x = f32::MIN;
         let mut min_x = f32::MAX;
         let mut max_y = f32::MIN;
         let mut min_y = f32::MAX;
-        for record in ifile.map(|r| r.unwrap()) {
+        for record in reader.map(|r| r.unwrap()) {
             max_x = max_x.max(record.x_cm);
             min_x = min_x.min(record.x_cm);
             max_y = max_y.max(record.y_cm);
             min_y = min_y.min(record.y_cm);
-        }
-        */
+        }*/
+        
         if sub_matches.value_of("format").unwrap() == "json" {
             // TODO use a proper serializer!
             println!("{{");
@@ -225,8 +224,8 @@ fn main() {
                      min_x,
                      max_x,
                      min_y,
-                     max_y);
-            */
+                     max_y);*/
+            
         }
         Ok(())
     } else {

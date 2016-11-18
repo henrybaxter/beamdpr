@@ -1,31 +1,23 @@
 #[macro_use]
 extern crate clap;
 extern crate egsphsp;
-extern crate rand;
 
 use std::path::Path;
 use std::error::Error;
 use std::process::exit;
 use std::f32;
+use std::fs::File;
 
-use rand::{SeedableRng, StdRng, Rng};
 use clap::{App, AppSettings, SubCommand, Arg};
 
-use egsphsp::Transform;
-use egsphsp::combine;
-use egsphsp::transform;
-use egsphsp::translate;
-use egsphsp::parse_header;
-use egsphsp::parse_records;
-use egsphsp::read_file;
-use egsphsp::write_file;
+use egsphsp::PHSPReader;
+use egsphsp::{translate, transform, Transform, combine, compare, randomize};
 
 fn floatify(s: &str) -> f32 {
     s.trim().trim_left_matches("(").trim_right_matches(")").trim().parse::<f32>().unwrap()
 }
 
 fn main() {
-    let mut exit_code = 0;
     let matches = App::new("egsphsp")
         .version("0.1")
         .author("Henry B. <henry.baxter@gmail.com>")
@@ -34,8 +26,7 @@ fn main() {
         .setting(AppSettings::SubcommandRequiredElseHelp)
         .subcommand(SubCommand::with_name("randomize")
             .about("Randomize the order of the particles")
-            .arg(Arg::with_name("input")
-                .required(true))
+            .arg(Arg::with_name("input").required(true))
             .arg(Arg::with_name("seed")
                 .long("seed")
                 .help("Seed as an unsigned integer")
@@ -43,14 +34,11 @@ fn main() {
                 .required(false)))
         .subcommand(SubCommand::with_name("compare")
             .about("Compare two phase space files")
-            .arg(Arg::with_name("first")
-                .required(true))
-            .arg(Arg::with_name("second")
-                .required(true)))
+            .arg(Arg::with_name("first").required(true))
+            .arg(Arg::with_name("second").required(true)))
         .subcommand(SubCommand::with_name("stats")
             .about("Stats on phase space file")
-            .arg(Arg::with_name("input")
-                .required(true))
+            .arg(Arg::with_name("input").required(true))
             .arg(Arg::with_name("format")
                 .default_value("human")
                 .possible_values(&["human", "json"])
@@ -95,7 +83,8 @@ fn main() {
                 .help("Output file")
                 .required_unless("in-place")))
         .subcommand(SubCommand::with_name("rotate")
-            .about("Rotate by --angle radians counter clockwise around z axis. Use parantheses around negatives.")
+            .about("Rotate by --angle radians counter clockwise around z axis. Use parantheses \
+                    around negatives.")
             .arg(Arg::with_name("in-place")
                 .short("i")
                 .long("in-place")
@@ -113,7 +102,8 @@ fn main() {
                 .help("Output file")
                 .required_unless("in-place")))
         .subcommand(SubCommand::with_name("reflect")
-            .about("Reflect in vector specified with -x and -y. Use parantheses around negatives.")
+            .about("Reflect in vector specified with -x and -y. Use parantheses around \
+                    negatives.")
             .arg(Arg::with_name("in-place")
                 .short("i")
                 .long("in-place")
@@ -144,63 +134,39 @@ fn main() {
             .map(|s| Path::new(s))
             .collect();
         let output_path = Path::new(sub_matches.value_of("output").unwrap());
-        println!("combine {} files into {}", input_paths.len(), output_path.display());
-        combine(&input_paths,
-                output_path,
-                sub_matches.is_present("delete"))
+        println!("combine {} files into {}",
+                 input_paths.len(),
+                 output_path.display());
+        combine(&input_paths, output_path, sub_matches.is_present("delete"))
     } else if subcommand == "randomize" {
         let sub_matches = matches.subcommand_matches("randomize").unwrap();
         let path = Path::new(sub_matches.value_of("input").unwrap());
-        let (header, mut records) = read_file(path).unwrap();
         let seed: &[_] = &[sub_matches.value_of("seed").unwrap().parse::<usize>().unwrap()];
-        let mut rng: StdRng = SeedableRng::from_seed(seed);
-        rng.shuffle(&mut records);
-        write_file(path, &header, &records)
+        randomize(path, seed)
     } else if subcommand == "compare" {
         // now we're going to print the header information of each
         // and then we're going to return a return code
         let sub_matches = matches.subcommand_matches("compare").unwrap();
         let path1 = Path::new(sub_matches.value_of("first").unwrap());
         let path2 = Path::new(sub_matches.value_of("second").unwrap());
-        let header1 = parse_header(path1).unwrap();
-        let header2 = parse_header(path2).unwrap();
-        println!("                   First\t\tSecond");
-        println!("Total particles:   {0: <10}\t\t{1:}", header1.total_particles, header2.total_particles);
-        println!("Total photons:     {0: <10}\t\t{1}", header1.total_photons, header2.total_photons);
-        println!("Minimum energy:    {0: <10}\t\t{1}", header1.min_energy, header2.min_energy);
-        println!("Maximum energy:    {0: <10}\t\t{1}", header1.max_energy, header2.max_energy);
-        println!("Source particles:  {0: <10}\t\t{1}", header1.total_particles_in_source, header2.total_particles_in_source);
-        if !header1.similar_to(&header2) {
-            println!("Headers different");
-            exit_code = 1;
-        } else {
-            let records1 = parse_records(path1, &header1).unwrap();
-            let records2 = parse_records(path2, &header2).unwrap();
-            for (record1, record2) in records1.iter().zip(records2.iter()) {
-                if !record1.similar_to(&record2) {
-                    println!("{:?} != {:?}", record1, record2);
-                    exit_code = 1;
-                }
-            }
-        }
-        Ok(())
+        compare(path1, path2)
     } else if subcommand == "stats" {
         let sub_matches = matches.subcommand_matches("stats").unwrap();
         let path = Path::new(sub_matches.value_of("input").unwrap());
-        let header = parse_header(path).unwrap();
-        let records = parse_records(path, &header).unwrap();
-        // greatest and smallest value of x and y
+        let ifile = File::open(path).unwrap();
+        let header = PHSPReader::from(ifile).unwrap().header;
+        /*let header = ifile.header;
         let mut max_x = f32::MIN;
         let mut min_x = f32::MAX;
         let mut max_y = f32::MIN;
         let mut min_y = f32::MAX;
-        // let mut total = 0.0 as f32;
-        for record in records.iter() {
+        for record in ifile.map(|r| r.unwrap()) {
             max_x = max_x.max(record.x_cm);
             min_x = min_x.min(record.x_cm);
             max_y = max_y.max(record.y_cm);
             min_y = min_y.min(record.y_cm);
         }
+        */
         if sub_matches.value_of("format").unwrap() == "json" {
             // TODO use a proper serializer!
             println!("{{");
@@ -208,16 +174,25 @@ fn main() {
             println!("\t\"total_photons\": {},", header.total_photons);
             println!("\t\"maximum_energy\": {},", header.max_energy);
             println!("\t\"minimum_energy\": {},", header.min_energy);
-            println!("\t\"total_particles_in_source\": {}", header.total_particles_in_source);
+            println!("\t\"total_particles_in_source\": {}",
+                     header.total_particles_in_source);
             println!("}}");
         } else {
             println!("Total particles: {}", header.total_particles);
             println!("Total photons: {}", header.total_photons);
-            println!("Total electrons/positrons: {}", header.total_particles - header.total_photons);
+            println!("Total electrons/positrons: {}",
+                     header.total_particles - header.total_photons);
             println!("Maximum energy: {:.*} MeV", 4, header.max_energy);
             println!("Minimum energy: {:.*} MeV", 4, header.min_energy);
-            println!("Incident particles from source: {:.*}", 1, header.total_particles_in_source);
-            println!("X position in [{}, {}], Y position in [{}, {}]", min_x, max_x, min_y, max_y);
+            println!("Incident particles from source: {:.*}",
+                     1,
+                     header.total_particles_in_source);
+            /*println!("X position in [{}, {}], Y position in [{}, {}]",
+                     min_x,
+                     max_x,
+                     min_y,
+                     max_y);
+            */
         }
         Ok(())
     } else {
@@ -234,7 +209,11 @@ fn main() {
                     translate(input_path, input_path, x, y)
                 } else {
                     let output_path = Path::new(sub_matches.value_of("output").unwrap());
-                    println!("translate {} by ({}, {}) and write to {}", input_path.display(), x, y, output_path.display());
+                    println!("translate {} by ({}, {}) and write to {}",
+                             input_path.display(),
+                             x,
+                             y,
+                             output_path.display());
                     translate(input_path, output_path, x, y)
                 }
             }
@@ -250,7 +229,11 @@ fn main() {
                     transform(input_path, input_path, &matrix)
                 } else {
                     let output_path = Path::new(sub_matches.value_of("output").unwrap());
-                    println!("reflect {} around ({}, {}) and write to {}", input_path.display(), x, y, output_path.display());
+                    println!("reflect {} around ({}, {}) and write to {}",
+                             input_path.display(),
+                             x,
+                             y,
+                             output_path.display());
                     transform(input_path, output_path, &matrix)
                 }
             }
@@ -265,7 +248,10 @@ fn main() {
                     transform(input_path, input_path, &matrix)
                 } else {
                     let output_path = Path::new(sub_matches.value_of("output").unwrap());
-                    println!("rotate {} by {} radians and write to {}", input_path.display(), angle, output_path.display());
+                    println!("rotate {} by {} radians and write to {}",
+                             input_path.display(),
+                             angle,
+                             output_path.display());
                     transform(input_path, output_path, &matrix)
                 }
             }
@@ -274,8 +260,10 @@ fn main() {
     };
 
     match result {
-        Ok(()) => (),
-        Err(err) => println!("Problem: {}", err.description()),
+        Ok(()) => exit(0),
+        Err(err) => {
+            println!("Error: {}", err.description());
+            exit(1);
+        }
     };
-    exit(exit_code);
 }

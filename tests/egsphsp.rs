@@ -9,15 +9,8 @@ use std::io::prelude::*;
 use std::f64::consts;
 use float_cmp::ApproxEqUlps;
 
-use egsphsp::Transform;
-use egsphsp::combine;
-use egsphsp::transform;
-use egsphsp::translate;
-use egsphsp::parse_header;
-use egsphsp::parse_records;
-//use egsphsp::read_file;
-//use egsphsp::write_file;
-use egsphsp::EGSResult;
+use egsphsp::PHSPReader;
+use egsphsp::{translate, transform, Transform, combine, compare};
 
 
 fn identical(path1: &Path, path2: &Path) -> bool {
@@ -30,58 +23,55 @@ fn identical(path1: &Path, path2: &Path) -> bool {
     buf1.as_slice() == buf2.as_slice()
 }
 
-fn similar(path1: &Path, path2: &Path) -> EGSResult<bool> {
-    let header1 = try!(parse_header(path1));
-    let header2 = try!(parse_header(path2));
-    if !header1.similar_to(&header2) {
-        println!("header1: {:?}\nheader2: {:?}", header1, header2);
-        return Ok(false)
-    }
-    let records1 = try!(parse_records(path1, &header1));
-    let records2 = try!(parse_records(path2, &header2));
-    for (record1, record2) in records1.iter().zip(records2.iter()) {
-        if !record1.similar_to(&record2) {
-            println!("record1: {:?}\trecord2: {:?}", record1, record2);
-            return Ok(false)
-        }
-    }
-    Ok(true)
-}
-
 #[test]
 fn first_file_header_correct() {
-    let path = Path::new("test_data/first.egsphsp1");
-    let header = parse_header(path).unwrap();
-    assert!(header.record_length == 28);
-    assert!(header.total_particles == 9345, format!("Total particles incorrect, found {:?}", header.total_particles));
-    assert!(header.total_photons == 8190, format!("Total photons incorrect, found {:?}", header.total_photons));
-    assert!(header.max_energy.approx_eq_ulps(&0.19944459, 2), format!("Max energy incorrect, found {:?}", header.max_energy));
-    assert!(header.min_energy.approx_eq_ulps(&0.012462342, 2), format!("Min energy incorrect, found {:?}", header.min_energy));
-    assert!(header.total_particles_in_source.approx_eq_ulps(&(10000.0 as f32), 2), format!("Total particles in source incorrect, found {:?}", header.total_particles_in_source));
+    let ifile = File::open(Path::new("test_data/first.egsphsp1")).unwrap();
+    let reader = PHSPReader::from(ifile).unwrap();
+    assert!(reader.header.record_size == 28);
+    assert!(reader.header.total_particles == 9345,
+        format!("Total particles incorrect, found {:?}", reader.header.total_particles));
+    assert!(reader.header.total_photons == 8190,
+        format!("Total photons incorrect, found {:?}", reader.header.total_photons));
+    assert!(reader.header.max_energy.approx_eq_ulps(&0.19944459, 2),
+        format!("Max energy incorrect, found {:?}", reader.header.max_energy));
+    assert!(reader.header.min_energy.approx_eq_ulps(&0.012462342, 2),
+        format!("Min energy incorrect, found {:?}", reader.header.min_energy));
+    assert!(reader.header.total_particles_in_source.approx_eq_ulps(&(10000.0 as f32), 2),
+        format!("Total particles in source incorrect, found {:?}", reader.header.total_particles_in_source));
 }
 
 #[test]
 fn second_file_header_correct() {
-    let path = Path::new("test_data/second.egsphsp1");
-    let header = parse_header(path).unwrap();
-    assert!(header.record_length == 28);
-    assert!(header.total_particles == 9345, format!("Total particles incorrect, found {:?}, header.total_particles", header.total_particles));
-    assert!(header.total_photons == 8190, format!("Total photons incorrect, found {:?}", header.total_photons));
-    assert!(header.max_energy.approx_eq_ulps(&0.19944459, 2), format!("Max energy incorrect, found {:?}", header.max_energy));
-    assert!(header.min_energy.approx_eq_ulps(&0.012462342, 2), format!("Min energy incorrect, found {:?}", header.min_energy));
-    assert!(header.total_particles_in_source.approx_eq_ulps(&(10000.0 as f32), 2), format!("Total particles in source incorrect, found {:?}", header.total_particles_in_source));
+    let ifile = File::open(Path::new("test_data/second.egsphsp1")).unwrap();
+    let reader = PHSPReader::from(ifile).unwrap();
+    assert!(reader.header.record_size == 28);
+    assert!(reader.header.total_particles == 9345,
+        format!("Total particles incorrect, found {:?}, header.total_particles", reader.header.total_particles));
+    assert!(reader.header.total_photons == 8190,
+        format!("Total photons incorrect, found {:?}", reader.header.total_photons));
+    assert!(reader.header.max_energy.approx_eq_ulps(&0.19944459, 2),
+        format!("Max energy incorrect, found {:?}", reader.header.max_energy));
+    assert!(reader.header.min_energy.approx_eq_ulps(&0.012462342, 2),
+        format!("Min energy incorrect, found {:?}", reader.header.min_energy));
+    assert!(reader.header.total_particles_in_source.approx_eq_ulps(&(10000.0 as f32), 2),
+        format!("Total particles in source incorrect, found {:?}", reader.header.total_particles_in_source));
 }
 
 #[test]
 fn combined_file_header_correct() {
-    let path = Path::new("test_data/combined.egsphsp1");
-    let header = parse_header(path).unwrap();
-    assert!(header.record_length == 28);
-    assert!(header.total_particles == 9345 * 2, format!("Total particles incorrect, found {:?}, header.total_particles", header.total_particles));
-    assert!(header.total_photons == 8190 * 2, format!("Total photons incorrect, found {:?}", header.total_photons));
-    assert!(header.max_energy.approx_eq_ulps(&0.19944459, 2), format!("Max energy incorrect, found {:?}", header.max_energy));
-    assert!(header.min_energy.approx_eq_ulps(&0.012462342, 2), format!("Min energy incorrect, found {:?}", header.min_energy));
-    assert!(header.total_particles_in_source.approx_eq_ulps(&(10000.0 * 2.0 as f32), 2), format!("Total particles in source incorrect, found {:?}", header.total_particles_in_source));
+    let ifile = File::open(Path::new("test_data/combined.egsphsp1")).unwrap();
+    let reader = PHSPReader::from(ifile).unwrap();
+    assert!(reader.header.record_size == 28);
+    assert!(reader.header.total_particles == 9345 * 2, 
+        format!("Total particles incorrect, found {:?}, header.total_particles", reader.header.total_particles));
+    assert!(reader.header.total_photons == 8190 * 2,
+        format!("Total photons incorrect, found {:?}", reader.header.total_photons));
+    assert!(reader.header.max_energy.approx_eq_ulps(&0.19944459, 2),
+        format!("Max energy incorrect, found {:?}", reader.header.max_energy));
+    assert!(reader.header.min_energy.approx_eq_ulps(&0.012462342, 2),
+        format!("Min energy incorrect, found {:?}", reader.header.min_energy));
+    assert!(reader.header.total_particles_in_source.approx_eq_ulps(&(10000.0 * 2.0 as f32), 2),
+        format!("Total particles in source incorrect, found {:?}", reader.header.total_particles_in_source));
 }
 
 /*
@@ -142,22 +132,22 @@ fn translate_operation() {
     let x = 5.0;
     let y = 5.0;
     translate(input_path, output_path, x, y).unwrap();
-    let input_header = parse_header(input_path).unwrap();
-    let output_header = parse_header(output_path).unwrap();
-    let input_records = parse_records(input_path, &input_header).unwrap();
-    let output_records = parse_records(output_path, &output_header).unwrap();
-    for (input_record, output_record) in input_records.iter().zip(output_records.iter()) {
-        let expected_x = input_record.x_cm + x;
-        let expected_y = input_record.y_cm + y;
-        let expected_x_cos = input_record.x_cos;
-        let expected_y_cos = input_record.y_cos;
-        assert!(output_record.x_cm.approx_eq_ulps(&expected_x, 2), format!("Expected x {:?}, found {:?}", expected_x, output_record.x_cm));
-        assert!(output_record.y_cm.approx_eq_ulps(&expected_y, 2), format!("Expected y {:?}, found {:?}", expected_y, output_record.y_cm));
-        assert!(output_record.x_cos.approx_eq_ulps(&expected_x_cos, 2), format!("Expected x cos {:?}, found {:?}", expected_x_cos, output_record.x_cos));
-        assert!(output_record.y_cos.approx_eq_ulps(&expected_y_cos, 2), format!("Expected y cos {:?}, found {:?}", expected_y_cos, output_record.y_cos));
+    let ifile = File::open(input_path).unwrap();
+    let ofile = File::open(output_path).unwrap();
+    let ireader = PHSPReader::from(ifile).unwrap();
+    let oreader = PHSPReader::from(ofile).unwrap();
+    for (irecord, orecord) in ireader.map(|r| r.unwrap()).zip(oreader.map(|r| r.unwrap())) {
+        let expected_x = irecord.x_cm + x;
+        let expected_y = irecord.y_cm + y;
+        let expected_x_cos = irecord.x_cos;
+        let expected_y_cos = irecord.y_cos;
+        assert!(orecord.x_cm.approx_eq_ulps(&expected_x, 2), format!("Expected x {:?}, found {:?}", expected_x, orecord.x_cm));
+        assert!(orecord.y_cm.approx_eq_ulps(&expected_y, 2), format!("Expected y {:?}, found {:?}", expected_y, orecord.y_cm));
+        assert!(orecord.x_cos.approx_eq_ulps(&expected_x_cos, 2), format!("Expected x cos {:?}, found {:?}", expected_x_cos, orecord.x_cos));
+        assert!(orecord.y_cos.approx_eq_ulps(&expected_y_cos, 2), format!("Expected y cos {:?}, found {:?}", expected_y_cos, orecord.y_cos));
     }
     translate(output_path, output_path, x, y).unwrap();
-    assert!(similar(input_path, output_path).unwrap());
+    compare(input_path, output_path).unwrap();
     remove_file(output_path).unwrap();
 }
 
@@ -169,7 +159,7 @@ fn rotate_operation() {
     Transform::rotation(&mut matrix, consts::PI as f32);
     transform(input_path, output_path, &matrix).unwrap();
     transform(output_path, output_path, &matrix).unwrap();
-    assert!(similar(input_path, output_path).unwrap());
+    compare(input_path, output_path).unwrap();
     remove_file(output_path).unwrap();
 }
 
@@ -181,7 +171,7 @@ fn reflect_operation() {
     Transform::reflection(&mut matrix, 1.0, 0.0);
     transform(input_path, output_path, &matrix).unwrap();
     transform(output_path, output_path, &matrix).unwrap();
-    assert!(similar(input_path, output_path).unwrap());
+    compare(input_path, output_path).unwrap();
     remove_file(output_path).unwrap();
 }
 

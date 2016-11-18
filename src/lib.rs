@@ -1,36 +1,39 @@
-extern crate byteorder;
 extern crate float_cmp;
+extern crate byteorder;
+extern crate rand;
 
 use std::error::Error;
-use std::fs::File;
+use std::fs::{File, OpenOptions, remove_file};
+use std::io::{BufReader, BufWriter};
 use std::io::prelude::*;
-use std::path::Path;
-use std::io::SeekFrom;
+use std::path::{Path};
 use std::str;
-use std::fs;
 use std::io;
 use std::fmt;
 
 use byteorder::{ByteOrder, LittleEndian};
+use rand::{SeedableRng, StdRng, Rng};
 use float_cmp::ApproxEqUlps;
 
-const BUFFER_SIZE: usize = 1024 * 64;
 const HEADER_LENGTH: usize = 25;
-const NO_ZLAST_RECORD_LENGTH: usize = 28;
-const WITH_ZLAST_RECORD_LENGTH: usize = 32;
+const MAX_RECORD_LENGTH: usize = 32;
+const BUFFER_CAPACITY: usize = 1 * 1024 * 1024;
+const MODE_LENGTH: usize = 5;
+const MAX_SHUFFLE_CAPACITY: usize = 512 * 1024 * 1024;
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Header {
     pub mode: [u8; 5],
-    pub record_length: i32,
     pub total_particles: i32,
     pub total_photons: i32,
     pub min_energy: f32,
     pub max_energy: f32,
     pub total_particles_in_source: f32,
+    pub record_size: u64,
+    pub using_zlast: bool,
 }
 
-#[derive(Debug)]
+#[derive(Debug, Copy, Clone)]
 pub struct Record {
     pub latch: u32,
     total_energy: f32,
@@ -51,6 +54,8 @@ pub enum EGSError {
     BadMode,
     BadLength,
     ModeMismatch,
+    HeaderMismatch,
+    RecordMismatch
 }
 
 pub type EGSResult<T> = Result<T, EGSError>;
@@ -74,6 +79,8 @@ impl fmt::Display for EGSError {
                        "Number of total particles does notmatch byte length of file")
             }
             EGSError::ModeMismatch => write!(f, "Input file MODE0/MODE2 do not match"),
+            EGSError::HeaderMismatch => write!(f, "Headers are different"),
+            EGSError::RecordMismatch => write!(f, "Records are different")
         }
     }
 }
@@ -85,6 +92,8 @@ impl Error for EGSError {
             EGSError::BadMode => "invalid mode",
             EGSError::BadLength => "bad file length",
             EGSError::ModeMismatch => "mode mismatch",
+            EGSError::HeaderMismatch => "header mismatch",
+            EGSError::RecordMismatch => "record mismatch"
         }
     }
 
@@ -94,16 +103,127 @@ impl Error for EGSError {
             EGSError::BadMode => None,
             EGSError::BadLength => None,
             EGSError::ModeMismatch => None,
+            EGSError::HeaderMismatch => None,
+            EGSError::RecordMismatch => None
         }
     }
 }
 
-impl Header {
-    fn expected_bytes(&self) -> u64 {
-        (self.total_particles as u64 + 1) * self.record_length as u64
+pub struct PHSPReader {
+    reader: BufReader<File>,
+    pub header: Header,
+    next_record: u64
+}
+
+pub struct PHSPWriter {
+    writer: BufWriter<File>,
+    pub header: Header,
+}
+
+
+impl PHSPReader {
+    pub fn from(file: File) -> EGSResult<PHSPReader> {
+        let actual_size = try!(file.metadata()).len();
+        let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, file);
+        let mut buffer = [0; HEADER_LENGTH];
+        try!(reader.read_exact(&mut buffer));
+        let mut mode = [0; MODE_LENGTH];
+        mode.clone_from_slice(&buffer[0..5]);
+        let header = Header {
+            mode: mode,
+            total_particles: LittleEndian::read_i32(&buffer[5..9]),
+            total_photons: LittleEndian::read_i32(&buffer[9..13]),
+            max_energy: LittleEndian::read_f32(&buffer[13..17]),
+            min_energy: LittleEndian::read_f32(&buffer[17..21]),
+            total_particles_in_source: LittleEndian::read_f32(&buffer[21..25]),
+            using_zlast: &mode == b"MODE2",
+            record_size: if &mode == b"MODE0" { 28 }
+                         else if &mode == b"MODE2" { 32 }
+                         else { return Err(EGSError::BadMode) }
+        };
+        if actual_size != header.expected_size() as u64 {
+            writeln!(&mut std::io::stderr(), "Expected {} bytes in file, not {}", header.expected_size(), actual_size).unwrap();
+            return Err(EGSError::BadLength)
+        }
+        reader.consume(header.record_size as usize - HEADER_LENGTH);
+        Ok(PHSPReader {
+            reader: reader,
+            header: header,
+            next_record: 0
+        })
     }
-    fn using_zlast(&self) -> bool {
-        &self.mode == b"MODE2"
+    fn exhausted(&self) -> bool {
+        self.next_record >= self.header.total_particles as u64
+    }
+}
+
+impl Iterator for PHSPReader {
+    type Item = EGSResult<Record>;
+    fn next(&mut self) -> Option<EGSResult<Record>> {
+        if self.next_record >= self.header.total_particles as u64 {
+            return None
+        }
+        let mut buffer = [0; MAX_RECORD_LENGTH];
+        match self.reader.read_exact(&mut buffer[..self.header.record_size as usize]) {
+            Ok(()) => (),
+            Err(err) => return Some(Err(EGSError::Io(err)))
+        };
+        self.next_record += 1;
+        Some(Ok(Record {
+            latch: LittleEndian::read_u32(&buffer[0..4]),
+            total_energy: LittleEndian::read_f32(&buffer[4..8]),
+            x_cm: LittleEndian::read_f32(&buffer[8..12]),
+            y_cm: LittleEndian::read_f32(&buffer[12..16]),
+            x_cos: LittleEndian::read_f32(&buffer[16..20]),
+            y_cos: LittleEndian::read_f32(&buffer[20..24]),
+            weight: LittleEndian::read_f32(&buffer[24..28]),
+            zlast: if self.header.using_zlast {
+                Some(LittleEndian::read_f32(&buffer[28..32]))
+            } else {
+                None
+            }
+        }))
+    }
+}
+
+impl PHSPWriter {
+
+    pub fn from(file: File, header: &Header) -> EGSResult<PHSPWriter> {
+        let mut writer = BufWriter::with_capacity(BUFFER_CAPACITY, file);
+        let mut buffer = [0; MAX_RECORD_LENGTH];
+        buffer[0..5].clone_from_slice(&header.mode);
+        LittleEndian::write_i32(&mut buffer[5..9], header.total_particles);
+        LittleEndian::write_i32(&mut buffer[9..13], header.total_photons);
+        LittleEndian::write_f32(&mut buffer[13..17], header.max_energy);
+        LittleEndian::write_f32(&mut buffer[17..21], header.min_energy);
+        LittleEndian::write_f32(&mut buffer[21..25], header.total_particles_in_source);
+        try!(writer.write_all(&buffer[..header.record_size as usize]));
+        Ok(PHSPWriter {
+            header: *header,
+            writer: writer
+        })
+    }
+
+    pub fn write(&mut self, record: &Record) -> EGSResult<()> {
+        let mut buffer = [0; 32];
+        LittleEndian::write_u32(&mut buffer[0..4], record.latch);
+        LittleEndian::write_f32(&mut buffer[4..8], record.total_energy);
+        LittleEndian::write_f32(&mut buffer[8..12], record.x_cm);
+        LittleEndian::write_f32(&mut buffer[12..16], record.y_cm);
+        LittleEndian::write_f32(&mut buffer[16..20], record.x_cos);
+        LittleEndian::write_f32(&mut buffer[20..24], record.y_cos);
+        LittleEndian::write_f32(&mut buffer[24..28], record.weight);
+        if self.header.using_zlast {
+            LittleEndian::write_f32(&mut buffer[28..32], record.weight);
+        }
+        try!(self.writer.write_all(&buffer[..self.header.record_size as usize]));
+        Ok(())
+    }
+}
+
+impl Header {
+    fn expected_size(&self) -> usize {
+        (self.total_particles as usize + 1) * self.record_size as usize
     }
     pub fn similar_to(&self, other: &Header) -> bool {
         self.mode == other.mode && self.total_particles == other.total_particles &&
@@ -112,37 +232,9 @@ impl Header {
         self.min_energy.approx_eq_ulps(&other.min_energy, 10) &&
         self.total_particles_in_source.approx_eq_ulps(&other.total_particles_in_source, 2)
     }
-    fn new_from_bytes(bytes: &[u8]) -> EGSResult<Header> {
-        let mut mode = [0; 5];
-        mode.clone_from_slice(&bytes[..5]);
-        let record_length = if &mode == b"MODE0" {
-            28
-        } else if &mode == b"MODE2" {
-            32
-        } else {
-            return Err(EGSError::BadMode);
-        };
-        Ok(Header {
-            mode: mode,
-            record_length: record_length,
-            total_particles: LittleEndian::read_i32(&bytes[5..9]),
-            total_photons: LittleEndian::read_i32(&bytes[9..13]),
-            max_energy: LittleEndian::read_f32(&bytes[13..17]),
-            min_energy: LittleEndian::read_f32(&bytes[17..21]),
-            total_particles_in_source: LittleEndian::read_f32(&bytes[21..25]),
-        })
-    }
-    fn write_to_bytes(&self, buffer: &mut [u8]) {
-        buffer[0..5].clone_from_slice(&self.mode);
-        LittleEndian::write_i32(&mut buffer[5..9], self.total_particles);
-        LittleEndian::write_i32(&mut buffer[9..13], self.total_photons);
-        LittleEndian::write_f32(&mut buffer[13..17], self.max_energy);
-        LittleEndian::write_f32(&mut buffer[17..21], self.min_energy);
-        LittleEndian::write_f32(&mut buffer[21..25], self.total_particles_in_source);
-    }
     fn merge(&mut self, other: &Header) {
         assert!(&self.mode == &other.mode, "Merge mode mismatch");
-        self.total_particles += other.total_particles;
+        self.total_particles = self.total_particles.checked_add(other.total_particles).expect("Too many particles, i32 overflow");
         self.total_photons += other.total_photons;
         self.min_energy = self.min_energy.min(other.min_energy);
         self.max_energy = self.max_energy.max(other.max_energy);
@@ -157,22 +249,6 @@ impl Record {
         self.x_cm - other.x_cm < 0.01 && self.y_cm - other.y_cm < 0.01 &&
         self.x_cos - other.x_cos < 0.01 && self.y_cos - other.y_cos < 0.01 &&
         self.weight - other.weight < 0.01 && self.zlast == other.zlast
-    }
-    fn new_from_bytes(buffer: &[u8], using_zlast: bool) -> Record {
-        Record {
-            latch: LittleEndian::read_u32(&buffer[0..4]),
-            total_energy: LittleEndian::read_f32(&buffer[4..8]),
-            x_cm: LittleEndian::read_f32(&buffer[8..12]),
-            y_cm: LittleEndian::read_f32(&buffer[12..16]),
-            x_cos: LittleEndian::read_f32(&buffer[16..20]),
-            y_cos: LittleEndian::read_f32(&buffer[20..24]),
-            weight: LittleEndian::read_f32(&buffer[24..28]),
-            zlast: if using_zlast {
-                Some(LittleEndian::read_f32(&buffer[28..32]))
-            } else {
-                None
-            },
-        }
     }
     pub fn bremsstrahlung_or_annihilation(&self) -> bool {
         self.latch & 1 != 0
@@ -207,39 +283,17 @@ impl Record {
     pub fn first_scored_by_primary_history(&self) -> bool {
         return self.total_energy.is_sign_negative()
     }
-    fn write_to_bytes(&self, buffer: &mut [u8], using_zlast: bool) {
-        LittleEndian::write_u32(&mut buffer[0..4], self.latch);
-        LittleEndian::write_f32(&mut buffer[4..8], self.total_energy);
-        LittleEndian::write_f32(&mut buffer[8..12], self.x_cm);
-        LittleEndian::write_f32(&mut buffer[12..16], self.y_cm);
-        LittleEndian::write_f32(&mut buffer[16..20], self.x_cos);
-        LittleEndian::write_f32(&mut buffer[20..24], self.y_cos);
-        LittleEndian::write_f32(&mut buffer[24..28], self.weight);
-        if using_zlast {
-            LittleEndian::write_f32(&mut buffer[28..32], self.weight);
-        }
+
+    fn translate(&mut self, x: f32, y: f32) {
+        self.x_cm += x;
+        self.y_cm += y;
     }
 
-    fn translate(buffer: &mut [u8], x: f32, y: f32) {
-        let new_x = LittleEndian::read_f32(&buffer[8..12]) + x;
-        let new_y = LittleEndian::read_f32(&buffer[12..16]) + y;
-        LittleEndian::write_f32(&mut buffer[8..12],  new_x);
-        LittleEndian::write_f32(&mut buffer[12..16], new_y);
-    }
-
-    fn transform(buffer: &mut [u8], matrix: &[[f32; 3]; 3]) {
-        let mut x = LittleEndian::read_f32(&buffer[8..12]);
-        let mut y = LittleEndian::read_f32(&buffer[12..16]);
-        let mut x_cos = LittleEndian::read_f32(&buffer[16..20]);
-        let mut y_cos = LittleEndian::read_f32(&buffer[20..24]);
-        x = matrix[0][0] * x + matrix[0][1] * y + matrix[0][2] * 1.0;
-        y = matrix[1][0] * x + matrix[1][1] * y + matrix[1][2] * 1.0;
-        x_cos = matrix[0][0] * x_cos + matrix[0][1] * y_cos + matrix[0][2] * 1.0;
-        y_cos = matrix[1][0] * x_cos + matrix[1][1] * y_cos + matrix[1][2] * 1.0;
-        LittleEndian::write_f32(&mut buffer[8..12], x);
-        LittleEndian::write_f32(&mut buffer[12..16], y);
-        LittleEndian::write_f32(&mut buffer[16..20], x_cos);
-        LittleEndian::write_f32(&mut buffer[20..24], y_cos);
+    fn transform(&mut self, matrix: &[[f32; 3]; 3]) {
+        self.x_cm = matrix[0][0] * self.x_cm + matrix[0][1] * self.y_cm + matrix[0][2] * 1.0;
+        self.y_cm = matrix[1][0] * self.x_cm + matrix[1][1] * self.y_cm + matrix[1][2] * 1.0;
+        self.x_cos = matrix[0][0] * self.x_cos + matrix[0][1] * self.y_cos + matrix[0][2] * 1.0;
+        self.y_cos = matrix[1][0] * self.x_cos + matrix[1][1] * self.y_cos + matrix[1][2] * 1.0;
     }
 }
 
@@ -257,136 +311,168 @@ impl Transform {
     }
 }
 
-
-pub fn parse_header(path: &Path) -> EGSResult<Header> {
-    let mut file = try!(File::open(&path));
-    let mut buffer = [0; HEADER_LENGTH];
-    try!(file.read_exact(&mut buffer));
-    let header = try!(Header::new_from_bytes(&buffer));
-    let metadata = try!(file.metadata());
-    if metadata.len() != header.expected_bytes() {
-        println!("expected {}, got {} bytes in file", header.expected_bytes(), metadata.len());
-        Err(EGSError::BadLength)
-    } else {
-        Ok(header)
+pub fn randomize(path: &Path, seed: &[usize]) -> EGSResult<()> {
+    let mut rng: StdRng = SeedableRng::from_seed(seed);
+    let ifile = try!(File::open(path));
+    let mut reader = try!(PHSPReader::from(ifile));
+    let header = reader.header;
+    let mode = reader.header.mode;
+    let n_batches = reader.header.expected_size() / MAX_SHUFFLE_CAPACITY + 1;
+    let n_records_per_batch = MAX_SHUFFLE_CAPACITY / reader.header.record_size as usize;
+    let mut batch_paths = Vec::with_capacity(n_batches as usize);
+    for i in 0..n_batches {
+        let mut batch_path = path.to_path_buf();
+        batch_path.set_extension(format!("rand{}", i));
+        batch_paths.push(batch_path);
     }
-}
-
-pub fn parse_records(path: &Path, header: &Header) -> EGSResult<Vec<Record>> {
-    let mut buffer = Vec::with_capacity((header.total_particles * header.record_length) as usize);
-    let mut records = Vec::with_capacity(header.total_particles_in_source as usize);
-    let mut ifile = try!(File::open(path));
-    try!(ifile.seek(SeekFrom::Start(header.record_length as u64)));
-    try!(ifile.read_to_end(&mut buffer));
-    drop(ifile);
-    for chunk in buffer.chunks_mut(header.record_length as usize) {
-        records.push(Record::new_from_bytes(&chunk, header.using_zlast()));
-    }
-    Ok(records)
-}
-
-pub fn read_file(path: &Path) -> EGSResult<(Header, Vec<Record>)> {
-    let header = try!(parse_header(path));
-    let records = try!(parse_records(path, &header));
-    Ok((header, records))
-}
-
-pub fn write_file(path: &Path, header: &Header, records: &[Record]) -> EGSResult<()> {
-    let mut buffer = Vec::with_capacity((header.total_particles * header.record_length) as usize);
-    if header.using_zlast() {
-        let mut record_buffer = [0; WITH_ZLAST_RECORD_LENGTH];
-        for record in records.iter() {
-            record.write_to_bytes(&mut record_buffer, header.using_zlast());
-            buffer.extend(&record_buffer);
+    let mut records = Vec::with_capacity(n_records_per_batch);
+    for path in batch_paths.iter() {
+        for _ in 0..n_records_per_batch {
+            match reader.next() {
+                Some(record) => records.push(record.unwrap()),
+                None => ()
+            }
         }
-    } else {
-        let mut record_buffer = [0; NO_ZLAST_RECORD_LENGTH];
+        rng.shuffle(&mut records);
+        let header = Header {
+            mode: mode,
+            total_particles: records.len() as i32,
+            total_photons: 0,
+            max_energy: 0.0,
+            min_energy: 0.0,
+            total_particles_in_source: 0.0,
+            using_zlast: &mode == b"MODE2",
+            record_size: if &mode == b"MODE0" { 28 }
+                         else if &mode == b"MODE2" { 32 }
+                         else { return Err(EGSError::BadMode) }
+        };
+        let ofile = try!(File::create(&path));
+        let mut writer = try!(PHSPWriter::from(ofile, &header));
         for record in records.iter() {
-            record.write_to_bytes(&mut record_buffer, header.using_zlast());
-            buffer.extend(&record_buffer);
+            try!(writer.write(&record));
         }
+        records.clear();
     }
-    let mut header_buffer = [0; HEADER_LENGTH];
-    header.write_to_bytes(&mut header_buffer);
-    let mut ofile = try!(File::create(path));
-    try!(ofile.write_all(&header_buffer));
-    try!(ofile.seek(SeekFrom::Start(header.record_length as u64)));
-    try!(ofile.write_all(&buffer));
+    drop(records);
+    let mut readers = Vec::with_capacity(n_batches);
+    for path in batch_paths.iter() {
+        let ifile = try!(File::open(&path));
+        readers.push(try!(PHSPReader::from(ifile)));
+    }
+
+    let ofile = try!(File::create(path));
+    let mut writer = try!(PHSPWriter::from(ofile, &header));
+    while readers.len() != 0 {
+        rng.shuffle(&mut readers);
+        for mut reader in readers.iter_mut() {
+            match reader.next() {
+                Some(record) => try!(writer.write(&record.unwrap())),
+                None => ()
+            }
+        }
+        readers.retain(|r| !r.exhausted());
+    }
+    for path in batch_paths.iter() {
+        try!(remove_file(path));
+    }
     Ok(())
 }
 
 
-pub fn combine(input_paths: &[&Path],
-               output_path: &Path,
-               delete_after_read: bool)
-               -> EGSResult<()> {
+pub fn combine(input_paths: &[&Path], output_path: &Path, delete: bool) -> EGSResult<()> {
     assert!(input_paths.len() > 0, "Cannot combine zero files");
-    let path = input_paths[0];
-    let mut header = try!(parse_header(&path));
-    let mut final_header = header;
+    let reader = try!(PHSPReader::from(try!(File::open(input_paths[0]))));
+    let mut final_header = reader.header;
     for path in input_paths[1..].iter() {
-        header = try!(parse_header(&path));
-        if &header.mode != &final_header.mode {
-            return Err(EGSError::ModeMismatch);
-        }
-        final_header.merge(&header);
+        let reader = try!(PHSPReader::from(try!(File::open(path))));
+        final_header.merge(&reader.header);
     }
-    let mut out_file = try!(File::create(output_path));
-    let mut buffer = [0; BUFFER_SIZE];
-    final_header.write_to_bytes(&mut buffer);
-    let offset = final_header.record_length as usize;
-    try!(out_file.write(&buffer[..offset]));
+    println!("Final header: {:?}", final_header);
+    let ofile = try!(File::create(output_path));
+    let mut writer = try!(PHSPWriter::from(ofile, &final_header));
     for path in input_paths.iter() {
-        let mut in_file = try!(File::open(path));
-        try!(in_file.seek(SeekFrom::Start(offset as u64)));
-        let mut read = try!(in_file.read(&mut buffer));
-        while read != 0 {
-            try!(out_file.write(&buffer[..read]));
-            read = try!(in_file.read(&mut buffer));
+        let reader = try!(PHSPReader::from(try!(File::open(path))));
+        for record in reader {
+            try!(writer.write(&record.unwrap()))
         }
-        if delete_after_read {
-            drop(in_file);
-            try!(fs::remove_file(path));
+        if delete {
+            try!(remove_file(path));
+        }
+    }
+    Ok(())
+}
+
+pub fn compare(path1: &Path, path2: &Path) -> EGSResult<()> {
+    let ifile1 = try!(File::open(path1));
+    let ifile2 = try!(File::open(path2));
+    let reader1 = try!(PHSPReader::from(ifile1));
+    let reader2 = try!(PHSPReader::from(ifile2));
+    println!("                   First\t\tSecond");
+    println!("Total particles:   {0: <10}\t\t{1:}", reader1.header.total_particles, reader2.header.total_particles);
+    println!("Total photons:     {0: <10}\t\t{1}", reader1.header.total_photons, reader2.header.total_photons);
+    println!("Minimum energy:    {0: <10}\t\t{1}", reader1.header.min_energy, reader2.header.min_energy);
+    println!("Maximum energy:    {0: <10}\t\t{1}", reader1.header.max_energy, reader2.header.max_energy);
+    println!("Source particles:  {0: <10}\t\t{1}", reader1.header.total_particles_in_source, reader2.header.total_particles_in_source);
+    if !reader1.header.similar_to(&reader2.header) {
+        println!("Headers different");
+        return Err(EGSError::HeaderMismatch)
+    } else {
+        for (record1, record2) in reader1.zip(reader2) {
+            let r1 = record1.unwrap();
+            let r2 = record2.unwrap();
+            if !r1.similar_to(&r2) {
+                println!("{:?} != {:?}", r1, r2);
+                return Err(EGSError::RecordMismatch)
+            }
         }
     }
     Ok(())
 }
 
 pub fn translate(input_path: &Path, output_path: &Path, x: f32, y: f32) -> EGSResult<()> {
-    let header = try!(parse_header(input_path));
-    let mut buffer = Vec::with_capacity((header.total_particles * header.record_length) as usize);
-    let mut ifile = try!(File::open(input_path));
-    try!(ifile.seek(SeekFrom::Start(header.record_length as u64)));
-    try!(ifile.read_to_end(&mut buffer));
-    drop(ifile);
-    for mut chunk in buffer.chunks_mut(header.record_length as usize) {
-        Record::translate(&mut chunk, x, y);
+    let ifile = try!(File::open(input_path));
+    let reader = try!(PHSPReader::from(ifile));
+    let ofile;
+    if input_path == output_path {
+        println!("Translating {} in place by ({}, {})", input_path.display(), x, y);
+        ofile = try!(OpenOptions::new().write(true).create(true).open(output_path));
+    } else {
+        println!("Translating {} by ({}, {}) and saving to {}", input_path.display(), x, y, output_path.display());
+        ofile = try!(File::create(output_path));
     }
-    let mut header_buffer = [0; HEADER_LENGTH];
-    header.write_to_bytes(&mut header_buffer);
-    let mut ofile = try!(File::create(output_path));
-    try!(ofile.write_all(&header_buffer));
-    try!(ofile.seek(SeekFrom::Start(header.record_length as u64)));
-    try!(ofile.write_all(&buffer));
+    let mut writer = try!(PHSPWriter::from(ofile, &reader.header));
+    let n_particles = reader.header.total_particles;
+    let mut records_translated = 0;
+    for mut record in reader.map(|r| r.unwrap()) {
+        record.translate(x, y);
+        try!(writer.write(&record));
+        records_translated += 1;
+    }
+    println!("Translated {} records, expected {}", records_translated, n_particles);
     Ok(())
 }
 
 
 pub fn transform(input_path: &Path, output_path: &Path, matrix: &[[f32; 3]; 3]) -> EGSResult<()> {
-    let header = try!(parse_header(input_path));
-    let mut buffer = Vec::with_capacity((header.total_particles * header.record_length) as usize);
-    let mut ifile = try!(File::open(input_path));
-    try!(ifile.seek(SeekFrom::Start(header.record_length as u64)));
-    try!(ifile.read_to_end(&mut buffer));
-    drop(ifile);
-    for mut chunk in buffer.chunks_mut(header.record_length as usize) {
-        Record::transform(&mut chunk, &matrix);
+    let ifile = try!(File::open(input_path));
+    let reader = try!(PHSPReader::from(ifile));
+    let ofile;
+    if input_path == output_path {
+        println!("Transforming {} in place", input_path.display());
+        ofile = try!(OpenOptions::new().write(true).create(true).open(output_path));
+    } else {
+        // different path (create/truncate destination)
+        println!("Transforming {} and saving to {}", input_path.display(), output_path.display());
+        ofile = try!(File::create(output_path));
     }
-    let mut header_buffer = [0; HEADER_LENGTH];
-    header.write_to_bytes(&mut header_buffer);
-    let mut ofile = try!(File::create(output_path));
-    try!(ofile.write_all(&header_buffer));
-    try!(ofile.seek(SeekFrom::Start(header.record_length as u64)));
-    try!(ofile.write_all(&buffer));
+    let mut writer = try!(PHSPWriter::from(ofile, &reader.header));
+    let n_particles = reader.header.total_particles;
+    let mut records_transformed = 0;
+    for mut record in reader.map(|r| r.unwrap()) {
+        record.transform(&matrix);
+        try!(writer.write(&record));
+        records_transformed += 1;
+    }
+    println!("Transformed {} records, expected {}", records_transformed, n_particles);
     Ok(())
 }

@@ -429,6 +429,45 @@ pub fn compare(path1: &Path, path2: &Path) -> EGSResult<()> {
     Ok(())
 }
 
+pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: u32, seed: &[usize]) -> EGSResult<()> {
+    assert!(ipaths.len() > 0, "Cannot combine zero files");
+    let mut rng: StdRng = SeedableRng::from_seed(seed);
+    let mut header = Header {
+        mode: *b"MODE0",
+        record_size: 28,
+        using_zlast: false,
+        total_particles: 0,
+        total_photons: 0,
+        min_energy: 1000.0,
+        max_energy: 0.0,
+        total_particles_in_source: 0.0
+    };
+    let mut writer = try!(PHSPWriter::from(try!(File::create(opath)), &header));
+    for path in ipaths.iter() {
+        let reader = try!(PHSPReader::from(try!(File::open(path))));
+        assert!(!reader.header.using_zlast);
+        println!("Found {} particles", reader.header.total_particles);
+        header.total_particles_in_source += reader.header.total_particles_in_source;
+        let records = reader.filter(|_| rng.gen_weighted_bool(10));
+        for record in records.map(|r| r.unwrap()) {
+            header.total_particles = header.total_particles.checked_add(1).expect("Total particles overflow");
+            if !record.charged() {
+                header.total_photons += 1;
+            }
+            header.min_energy = header.min_energy.min(record.total_energy.abs());
+            header.max_energy = header.max_energy.max(record.total_energy.abs());
+            try!(writer.write(&record));
+        }
+        println!("Now have {} particles", header.total_particles);
+    }
+    header.total_particles_in_source /= rate as f32;
+    drop(writer);
+    // write out the header
+    let ofile = try!(OpenOptions::new().write(true).create(true).open(opath));
+    try!(PHSPWriter::from(ofile, &header));
+    Ok(())
+}
+
 pub fn translate(input_path: &Path, output_path: &Path, x: f32, y: f32) -> EGSResult<()> {
     let ifile = try!(File::open(input_path));
     let reader = try!(PHSPReader::from(ifile));

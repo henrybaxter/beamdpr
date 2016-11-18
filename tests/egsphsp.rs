@@ -10,7 +10,7 @@ use std::f64::consts;
 use float_cmp::ApproxEqUlps;
 
 use egsphsp::PHSPReader;
-use egsphsp::{translate, transform, Transform, combine, compare};
+use egsphsp::{translate, transform, Transform, combine, compare, sample_combine};
 
 
 fn identical(path1: &Path, path2: &Path) -> bool {
@@ -94,6 +94,19 @@ fn combine_operation_matches_beamdp() {
     combine(&input_paths, output_path, false).unwrap();
     assert!(identical(output_path, expected_path));
     remove_file(output_path).unwrap();
+}
+
+#[test]
+fn combine_samples() {
+    let input_paths = vec![Path::new("test_data/first.egsphsp1"), Path::new("test_data/second.egsphsp1")];
+    let output_path = Path::new("test_data/test_combined_samples.egsphsp1");
+    let rate = 10;
+    let seed = [0];
+    sample_combine(&input_paths, output_path, rate, &seed).unwrap();
+    let ifile = File::open(output_path).unwrap();
+    let reader = PHSPReader::from(ifile).unwrap();
+    let expected = 9345 * 2 / 10;
+    assert!((reader.header.total_particles - expected).abs() < 100, format!("expected {} particles but found {}", expected, reader.header.total_particles))
 }
 
 #[test]

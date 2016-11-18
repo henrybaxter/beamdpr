@@ -11,7 +11,7 @@ use std::fs::File;
 use clap::{App, AppSettings, SubCommand, Arg};
 
 use egsphsp::PHSPReader;
-use egsphsp::{translate, transform, Transform, combine, compare, randomize};
+use egsphsp::{translate, transform, Transform, combine, compare, randomize, sample_combine};
 
 fn floatify(s: &str) -> f32 {
     s.trim().trim_left_matches("(").trim_right_matches(")").trim().parse::<f32>().unwrap()
@@ -60,6 +60,27 @@ fn main() {
                 .short("d")
                 .long("delete")
                 .help("Delete input files as they are used (no going back!)")))
+        .subcommand(SubCommand::with_name("sample-combine")
+            .about("Combine samples of phase space inputs files into outputfile - does not adjust weights")
+            .arg(Arg::with_name("input")
+                .required(true)
+                .multiple(true))
+            .arg(Arg::with_name("output")
+                .short("o")
+                .long("output")
+                .takes_value(true)
+                .required(true))
+            .arg(Arg::with_name("seed")
+                .long("seed")
+                .help("Seed as an unsigned integer")
+                .default_value("0")
+                .required(false))
+            .arg(Arg::with_name("rate")
+                .default_value("10")
+                .required(false)
+                .long("rate")
+                .takes_value(true)
+                .help("Inverse sample rate - 10 means take rougly 1 out of every 10 particles")))
         .subcommand(SubCommand::with_name("translate")
             .about("Translate using X and Y in centimeters. Use parantheses around negatives.")
             .arg(Arg::with_name("in-place")
@@ -138,6 +159,19 @@ fn main() {
                  input_paths.len(),
                  output_path.display());
         combine(&input_paths, output_path, sub_matches.is_present("delete"))
+    } else if subcommand == "sample-combine" {
+        let sub_matches = matches.subcommand_matches("sample-combine").unwrap();
+        let input_paths: Vec<&Path> = sub_matches.values_of("input")
+            .unwrap()
+            .map(|s| Path::new(s))
+            .collect();
+        let output_path = Path::new(sub_matches.value_of("output").unwrap());
+        let rate = sub_matches.value_of("rate").unwrap().parse::<u32>().unwrap();
+        let seed: &[_] = &[sub_matches.value_of("seed").unwrap().parse::<usize>().unwrap()];
+        println!("sample combine {} files into {} at 1 in {}",
+            input_paths.len(), output_path.display(), rate);
+        sample_combine(&input_paths, output_path, rate, seed)
+
     } else if subcommand == "randomize" {
         let sub_matches = matches.subcommand_matches("randomize").unwrap();
         let path = Path::new(sub_matches.value_of("input").unwrap());

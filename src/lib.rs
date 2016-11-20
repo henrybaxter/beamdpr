@@ -302,10 +302,14 @@ impl Record {
     }
 
     fn transform(&mut self, matrix: &[[f32; 3]; 3]) {
-        self.x_cm = matrix[0][0] * self.x_cm + matrix[0][1] * self.y_cm + matrix[0][2] * 1.0;
-        self.y_cm = matrix[1][0] * self.x_cm + matrix[1][1] * self.y_cm + matrix[1][2] * 1.0;
-        self.x_cos = matrix[0][0] * self.x_cos + matrix[0][1] * self.y_cos + matrix[0][2] * 1.0;
-        self.y_cos = matrix[1][0] * self.x_cos + matrix[1][1] * self.y_cos + matrix[1][2] * 1.0;
+        let x_cm = self.x_cm;
+        let y_cm = self.y_cm;
+        self.x_cm = matrix[0][0] * x_cm + matrix[0][1] * y_cm + matrix[0][2] * 1.0;
+        self.y_cm = matrix[1][0] * x_cm + matrix[1][1] * y_cm + matrix[1][2] * 1.0;
+        let x_cos = self.x_cos;
+        let y_cos = self.y_cos;
+        self.x_cos = matrix[0][0] * x_cos + matrix[0][1] * y_cos + matrix[0][2] * self.z_cos();
+        self.y_cos = matrix[1][0] * x_cos + matrix[1][1] * y_cos + matrix[1][2] * self.z_cos();
     }
 }
 

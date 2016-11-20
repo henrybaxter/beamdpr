@@ -41,7 +41,7 @@ pub struct Record {
     pub y_cm: f32,
     pub x_cos: f32, // TODO verify these are normalized
     pub y_cos: f32,
-    weight: f32, // also carries the sign of the z direction, yikes
+    pub weight: f32, // also carries the sign of the z direction, yikes
     pub zlast: Option<f32>,
 }
 
@@ -277,8 +277,11 @@ impl Record {
     pub fn crossed_multiple(&self) -> bool {
         self.latch & (1 << 30) != 0
     }
-    pub fn weight(&self) -> f32 {
+    pub fn get_weight(&self) -> f32 {
         self.weight.abs()
+    }
+    pub fn set_weight(&mut self, new_weight: f32) {
+        self.weight = new_weight * self.weight.signum();
     }
     pub fn total_energy(&self) -> f32 {
         self.total_energy.abs()
@@ -570,20 +573,32 @@ pub fn reweight(input_path: &Path,
         println!("Rewighting and saving to {}", output_path.display());
         output_file = try!(File::create(output_path));
     }
-    let reader = try!(PHSPReader::from(input_file));
-    let mut writer = try!(PHSPWriter::from(output_file, &reader.header));
+    let reader1 = try!(PHSPReader::from(input_file));
+    let mut writer1 = try!(PHSPWriter::from(output_file, &reader1.header));
     let bin_size = max_radius / number_bins as f32;
     println!("Bin size is {}", bin_size);
-    let mut sum = 0.0;
-    for i in 0..number_bins {
-        sum += f(bin_size * (i as f32 * 3.0 / 2.0));
-    }
-    println!("Sum is {}", sum);
-    for mut record in reader.map(|r| r.unwrap()) {
+    let mut sum_old_weight = 0.0;
+    let mut sum_new_weight = 0.0;
+    for mut record in reader1.map(|r| r.unwrap()) {
+        sum_old_weight += record.weight;
         let r = (record.x_cm * record.x_cm + record.y_cm * record.y_cm).sqrt();
-        let i = (r / bin_size).floor();
-        record.weight = record.weight * f(bin_size * (i as f32 * 3.0 / 2.0)) / sum;
-        try!(writer.write(&record));
+        record.weight *= f(r);
+        sum_new_weight += record.weight;
+        try!(writer1.write(&record));
+    }
+    let ifile2 = try!(File::open(input_path));
+    let ofile2;
+    if input_path == output_path {
+        ofile2 = try!(OpenOptions::new().write(true).create(true).open(output_path));
+    } else {
+        ofile2 = try!(File::create(output_path));
+    }
+    let reader2 = try!(PHSPReader::from(ifile2));
+    let mut writer2 = try!(PHSPWriter::from(ofile2, &reader2.header));
+    let factor = sum_new_weight / sum_old_weight;
+    for mut record in reader2.map(|r| r.unwrap()) {
+        record.weight *= factor;
+        try!(writer2.write(&record));
     }
     Ok(())
 }

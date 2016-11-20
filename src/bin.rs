@@ -214,7 +214,7 @@ fn main() {
         for record in reader.take(number).map(|r| r.unwrap()) {
             for field in fields.iter() {
                 match field {
-                    &"weight" => print!("{:<16}", record.weight()),
+                    &"weight" => print!("{:<16}", record.get_weight()),
                     &"energy" => print!("{:<16}", record.total_energy()),
                     &"x" => print!("{:<16}", record.x_cm),
                     &"y" => print!("{:<16}", record.y_cm),
@@ -222,6 +222,7 @@ fn main() {
                     &"y_cos" => print!("{:<16}", record.y_cos),
                     &"produced" => print!("{:<16}", record.bremsstrahlung_or_annihilation()),
                     &"charged" => print!("{:<16}", record.charged()),
+                    &"r" => print!("{:<16}", (record.x_cm * record.x_cm + record.y_cm * record.y_cm).sqrt()),
                     _ => panic!("Unknown field {}", field)
                 };
             }

@@ -11,7 +11,7 @@ use std::fs::File;
 use clap::{App, AppSettings, SubCommand, Arg};
 
 use egsphsp::PHSPReader;
-use egsphsp::{translate, transform, Transform, combine, compare, randomize, sample_combine, reweight};
+use egsphsp::{translate, transform, Transform, combine, compare, randomize, sample_combine};
 
 fn floatify(s: &str) -> f32 {
     s.trim().trim_left_matches("(").trim_right_matches(")").trim().parse::<f32>().unwrap()
@@ -24,45 +24,6 @@ fn main() {
         .about("Combine and transform egsphsp (EGS phase space) \
                 files")
         .setting(AppSettings::SubcommandRequiredElseHelp)
-        .subcommand(SubCommand::with_name("print")
-            .about("Print the specified fields in the specified order for n (or all) records")
-            .arg(Arg::with_name("fields")
-                .long("field")
-                .short("f")
-                .takes_value(true)
-                .required(true)
-                .multiple(true))
-            .arg(Arg::with_name("number")
-                .long("number")
-                .short("n")
-                .takes_value(true)
-                .default_value("10"))
-            .arg(Arg::with_name("input")
-                .takes_value(true)
-                .required(true)))
-        .subcommand(SubCommand::with_name("reweight")
-            .about("Reweight a phase space file as a function of distance from z")
-            .arg(Arg::with_name("input")
-                .required(true)
-                .takes_value(true))
-            .arg(Arg::with_name("output")
-                .long("output")
-                .required(false)
-                .short("o")
-                .takes_value(true))
-            .arg(Arg::with_name("r")
-                .required(true)
-                .short("r")
-                .takes_value(true))
-            .arg(Arg::with_name("c")
-                .short("c")
-                .takes_value(true)
-                .required(true))
-            .arg(Arg::with_name("bins")
-                .long("bins")
-                .takes_value(true)
-                .default_value("100")
-                .required(false)))
         .subcommand(SubCommand::with_name("randomize")
             .about("Randomize the order of the particles")
             .arg(Arg::with_name("input").required(true))
@@ -100,8 +61,7 @@ fn main() {
                 .long("delete")
                 .help("Delete input files as they are used (no going back!)")))
         .subcommand(SubCommand::with_name("sample-combine")
-            .about("Combine samples of phase space inputs files into outputfile - does not \
-                    adjust weights")
+            .about("Combine samples of phase space inputs files into outputfile - does not adjust weights")
             .arg(Arg::with_name("input")
                 .required(true)
                 .multiple(true))
@@ -199,53 +159,6 @@ fn main() {
                  input_paths.len(),
                  output_path.display());
         combine(&input_paths, output_path, sub_matches.is_present("delete"))
-    } else if subcommand == "print" {
-        // prints the fields specified?
-        let sub_matches = matches.subcommand_matches("print").unwrap();
-        let input_path = Path::new(sub_matches.value_of("input").unwrap());
-        let number = sub_matches.value_of("number").unwrap().parse::<usize>().unwrap();
-        let fields: Vec<&str> = sub_matches.values_of("fields").unwrap().collect();
-        let file = File::open(input_path).unwrap();
-        let reader = PHSPReader::from(file).unwrap();
-        for field in fields.iter() {
-            print!("{:<16}", field);
-        }
-        println!("");
-        for record in reader.take(number).map(|r| r.unwrap()) {
-            for field in fields.iter() {
-                match field {
-                    &"weight" => print!("{:<16}", record.get_weight()),
-                    &"energy" => print!("{:<16}", record.total_energy()),
-                    &"x" => print!("{:<16}", record.x_cm),
-                    &"y" => print!("{:<16}", record.y_cm),
-                    &"x_cos" => print!("{:<16}", record.x_cos),
-                    &"y_cos" => print!("{:<16}", record.y_cos),
-                    &"produced" => print!("{:<16}", record.bremsstrahlung_or_annihilation()),
-                    &"charged" => print!("{:<16}", record.charged()),
-                    &"r" => print!("{:<16}", (record.x_cm * record.x_cm + record.y_cm * record.y_cm).sqrt()),
-                    _ => panic!("Unknown field {}", field)
-                };
-            }
-            println!("");
-        }
-        Ok(())
-    } else if subcommand == "reweight" {
-        println!("unwrapping subcommand");
-        let sub_matches = matches.subcommand_matches("reweight").unwrap();
-        println!("unwrapping input_path");
-        let input_path = Path::new(sub_matches.value_of("input").unwrap());
-        println!("unwrapping output_path");
-        let output_path = if sub_matches.is_present("output") {
-            Path::new(sub_matches.value_of("output").unwrap())
-        } else {
-            input_path
-        };
-        println!("unwrapping c");
-        let c = floatify(sub_matches.value_of("c").unwrap());
-        println!("unwrapping r");
-        let r = floatify(sub_matches.value_of("r").unwrap());
-        let bins = sub_matches.value_of("bins").unwrap().parse::<usize>().unwrap();
-        reweight(input_path, output_path, &|x| c * x, bins, r)
     } else if subcommand == "sample-combine" {
         let sub_matches = matches.subcommand_matches("sample-combine").unwrap();
         let input_paths: Vec<&Path> = sub_matches.values_of("input")
@@ -256,9 +169,7 @@ fn main() {
         let rate = sub_matches.value_of("rate").unwrap().parse::<u32>().unwrap();
         let seed: &[_] = &[sub_matches.value_of("seed").unwrap().parse::<usize>().unwrap()];
         println!("sample combine {} files into {} at 1 in {}",
-                 input_paths.len(),
-                 output_path.display(),
-                 rate);
+            input_paths.len(), output_path.display(), rate);
         sample_combine(&input_paths, output_path, rate, seed)
 
     } else if subcommand == "randomize" {
@@ -278,17 +189,17 @@ fn main() {
         let path = Path::new(sub_matches.value_of("input").unwrap());
         let reader = PHSPReader::from(File::open(path).unwrap()).unwrap();
         let header = reader.header;
-        // let mut max_x = f32::MIN;
-        // let mut min_x = f32::MAX;
-        // let mut max_y = f32::MIN;
-        // let mut min_y = f32::MAX;
-        // for record in reader.map(|r| r.unwrap()) {
-        // max_x = max_x.max(record.x_cm);
-        // min_x = min_x.min(record.x_cm);
-        // max_y = max_y.max(record.y_cm);
-        // min_y = min_y.min(record.y_cm);
-        // }
-
+        /*let mut max_x = f32::MIN;
+        let mut min_x = f32::MAX;
+        let mut max_y = f32::MIN;
+        let mut min_y = f32::MAX;
+        for record in reader.map(|r| r.unwrap()) {
+            max_x = max_x.max(record.x_cm);
+            min_x = min_x.min(record.x_cm);
+            max_y = max_y.max(record.y_cm);
+            min_y = min_y.min(record.y_cm);
+        }*/
+        
         if sub_matches.value_of("format").unwrap() == "json" {
             // TODO use a proper serializer!
             println!("{{");
@@ -309,12 +220,12 @@ fn main() {
             println!("Incident particles from source: {:.*}",
                      1,
                      header.total_particles_in_source);
-            // println!("X position in [{}, {}], Y position in [{}, {}]",
-            // min_x,
-            // max_x,
-            // min_y,
-            // max_y);
-
+            /*println!("X position in [{}, {}], Y position in [{}, {}]",
+                     min_x,
+                     max_x,
+                     min_y,
+                     max_y);*/
+            
         }
         Ok(())
     } else {

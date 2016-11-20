@@ -73,6 +73,27 @@ And there it is:
 
 **NOTE:** This will work with any number of files, as long as their mode matches. That means either they all have ZLAST or none of them do.
 
+Sample-Combine
+--------------
+
+.. code-block: bash
+
+    $ ls
+    first.egsphsp1 second.egsphsp1
+
+Take a sampling of 1 in 10 particles from each file
+
+.. code-block:: bash
+
+    $ beamdpr sample-combine *.egsphsp1 -o combined.egsphsp1 --rate 10
+    $ du -sh *
+    256K    first.egsphsp1
+    256K    second.egsphsp1
+    52K     combined.egsphsp1
+    
+
+Notice that we have divided the total space by 10.
+
 
 Translate
 ---------

@@ -586,6 +586,7 @@ pub fn reweight(input_path: &Path,
         sum_new_weight += record.weight;
         try!(writer1.write(&record));
     }
+    drop(writer1);
     let ifile2 = try!(File::open(input_path));
     let ofile2;
     if input_path == output_path {
@@ -595,7 +596,7 @@ pub fn reweight(input_path: &Path,
     }
     let reader2 = try!(PHSPReader::from(ifile2));
     let mut writer2 = try!(PHSPWriter::from(ofile2, &reader2.header));
-    let factor = sum_new_weight / sum_old_weight;
+    let factor = sum_old_weight / sum_new_weight;
     for mut record in reader2.map(|r| r.unwrap()) {
         record.weight *= factor;
         try!(writer2.write(&record));

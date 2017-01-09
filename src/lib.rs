@@ -19,7 +19,7 @@ const HEADER_LENGTH: usize = 25;
 const MAX_RECORD_LENGTH: usize = 32;
 const BUFFER_CAPACITY: usize = 1 * 1024 * 1024;
 const MODE_LENGTH: usize = 5;
-const MAX_SHUFFLE_CAPACITY: usize = 512 * 1024 * 1024;
+const BATCHES: usize = 128;  // too high and one hits ulimit (around 1024)
 
 #[derive(Debug, Copy, Clone)]
 pub struct Header {
@@ -332,18 +332,16 @@ pub fn randomize(path: &Path, seed: &[usize]) -> EGSResult<()> {
     let ifile = try!(File::open(path));
     let mut reader = try!(PHSPReader::from(ifile));
     let header = reader.header;
-    let mode = reader.header.mode;
-    let n_batches = reader.header.expected_size() / MAX_SHUFFLE_CAPACITY + 1;
-    let n_records_per_batch = MAX_SHUFFLE_CAPACITY / reader.header.record_size as usize;
-    let mut batch_paths = Vec::with_capacity(n_batches as usize);
-    for i in 0..n_batches {
+    let max_per_batch = reader.header.total_particles as usize / BATCHES + 1;
+    let mut batch_paths = Vec::with_capacity(BATCHES);
+    for i in 0..BATCHES {
         let mut batch_path = path.to_path_buf();
         batch_path.set_extension(format!("rand{}", i));
         batch_paths.push(batch_path);
     }
-    let mut records = Vec::with_capacity(n_records_per_batch);
+    let mut records = Vec::with_capacity(max_per_batch);
     for path in batch_paths.iter() {
-        for _ in 0..n_records_per_batch {
+        for _ in 0..max_per_batch {
             match reader.next() {
                 Some(record) => records.push(record.unwrap()),
                 None => (),
@@ -351,20 +349,14 @@ pub fn randomize(path: &Path, seed: &[usize]) -> EGSResult<()> {
         }
         rng.shuffle(&mut records);
         let header = Header {
-            mode: mode,
+            mode: reader.header.mode,
             total_particles: records.len() as i32,
             total_photons: 0,
             max_energy: 0.0,
             min_energy: 0.0,
             total_particles_in_source: 0.0,
-            using_zlast: &mode == b"MODE2",
-            record_size: if &mode == b"MODE0" {
-                28
-            } else if &mode == b"MODE2" {
-                32
-            } else {
-                return Err(EGSError::BadMode);
-            },
+            using_zlast: &reader.header.mode == b"MODE2",
+            record_size: reader.header.record_size,
         };
         let ofile = try!(File::create(&path));
         let mut writer = try!(PHSPWriter::from(ofile, &header));
@@ -374,7 +366,7 @@ pub fn randomize(path: &Path, seed: &[usize]) -> EGSResult<()> {
         records.clear();
     }
     drop(records);
-    let mut readers = Vec::with_capacity(n_batches);
+    let mut readers = Vec::with_capacity(BATCHES);
     for path in batch_paths.iter() {
         let ifile = try!(File::open(&path));
         readers.push(try!(PHSPReader::from(ifile)));

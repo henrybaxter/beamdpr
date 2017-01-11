@@ -18,8 +18,8 @@ fn floatify(s: &str) -> f32 {
 }
 
 fn main() {
-    let matches = App::new("egsphsp")
-        .version("0.1")
+    let matches = App::new("beamdpr")
+        .version("0.2.2")
         .author("Henry B. <henry.baxter@gmail.com>")
         .about("Combine and transform egsphsp (EGS phase space) \
                 files")

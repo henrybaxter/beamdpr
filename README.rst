@@ -9,6 +9,7 @@ Combine and transform egsphsp (EGS phase space) files.
 .. image:: https://img.shields.io/crates/v/beamdpr.svg
     :target: https://crates.io/crates/beamdpr
 
+.. image:: screenshots/basic.png
 
 How it works
 ------------

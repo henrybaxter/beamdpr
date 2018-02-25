@@ -151,7 +151,7 @@ impl PHSPReader {
                      header.expected_size(),
                      actual_size)
                 .unwrap();
-            return Err(EGSError::BadLength);
+            //return Err(EGSError::BadLength);
         }
         reader.consume(header.record_size as usize - HEADER_LENGTH);
         Ok(PHSPReader {

@@ -1,25 +1,23 @@
-extern crate float_cmp;
 extern crate byteorder;
+extern crate float_cmp;
 extern crate rand;
 
-use std::error::Error;
-use std::fs::{File, OpenOptions, remove_file};
-use std::io::{BufReader, BufWriter};
-use std::io::prelude::*;
-use std::path::Path;
-use std::str;
-use std::io;
 use std::fmt;
+use std::fs::{remove_file, File, OpenOptions};
+use std::io;
+use std::io::prelude::*;
+use std::io::{BufReader, BufWriter};
+use std::path::Path;
 
 use byteorder::{ByteOrder, LittleEndian};
-use rand::{SeedableRng, StdRng, Rng};
 use float_cmp::ApproxEqUlps;
+use rand::{Rng, SeedableRng, StdRng};
 
 const HEADER_LENGTH: usize = 25;
 const MAX_RECORD_LENGTH: usize = 32;
 const BUFFER_CAPACITY: usize = 1 * 1024 * 1024;
 const MODE_LENGTH: usize = 5;
-const BATCHES: usize = 128;  // too high and one hits ulimit (around 1024)
+const BATCHES: usize = 128; // too high and one hits ulimit (around 1024)
 
 #[derive(Debug, Copy, Clone)]
 pub struct Header {
@@ -71,40 +69,20 @@ impl fmt::Display for EGSError {
         match *self {
             EGSError::Io(ref err) => err.fmt(f),
             EGSError::BadMode => {
-                write!(f,
-                       "First 5 bytes of file are invalid, must be MODE0 or MODE2")
+                write!(
+                    f,
+                    "First 5 bytes of file are invalid, must be MODE0 or MODE2"
+                )
             }
             EGSError::BadLength => {
-                write!(f,
-                       "Number of total particles does notmatch byte length of file")
+                write!(
+                    f,
+                    "Number of total particles does notmatch byte length of file"
+                )
             }
             EGSError::ModeMismatch => write!(f, "Input file MODE0/MODE2 do not match"),
             EGSError::HeaderMismatch => write!(f, "Headers are different"),
             EGSError::RecordMismatch => write!(f, "Records are different"),
-        }
-    }
-}
-
-impl Error for EGSError {
-    fn description(&self) -> &str {
-        match *self {
-            EGSError::Io(ref err) => err.description(),
-            EGSError::BadMode => "invalid mode",
-            EGSError::BadLength => "bad file length",
-            EGSError::ModeMismatch => "mode mismatch",
-            EGSError::HeaderMismatch => "header mismatch",
-            EGSError::RecordMismatch => "record mismatch",
-        }
-    }
-
-    fn cause(&self) -> Option<&Error> {
-        match *self {
-            EGSError::Io(ref err) => Some(err),
-            EGSError::BadMode => None,
-            EGSError::BadLength => None,
-            EGSError::ModeMismatch => None,
-            EGSError::HeaderMismatch => None,
-            EGSError::RecordMismatch => None,
         }
     }
 }
@@ -120,13 +98,12 @@ pub struct PHSPWriter {
     pub header: Header,
 }
 
-
 impl PHSPReader {
     pub fn from(file: File) -> EGSResult<PHSPReader> {
-        let actual_size = try!(file.metadata()).len();
+        let actual_size = (file.metadata()?).len();
         let mut reader = BufReader::with_capacity(BUFFER_CAPACITY, file);
         let mut buffer = [0; HEADER_LENGTH];
-        try!(reader.read_exact(&mut buffer));
+        reader.read_exact(&mut buffer)?;
         let mut mode = [0; MODE_LENGTH];
         mode.clone_from_slice(&buffer[0..5]);
         let header = Header {
@@ -146,11 +123,13 @@ impl PHSPReader {
             },
         };
         if actual_size != header.expected_size() as u64 {
-            writeln!(&mut std::io::stderr(),
-                     "Expected {} bytes in file, not {}",
-                     header.expected_size(),
-                     actual_size)
-                .unwrap();
+            writeln!(
+                &mut std::io::stderr(),
+                "Expected {} bytes in file, not {}",
+                header.expected_size(),
+                actual_size
+            )
+            .unwrap();
             //return Err(EGSError::BadLength);
         }
         reader.consume(header.record_size as usize - HEADER_LENGTH);
@@ -172,7 +151,10 @@ impl Iterator for PHSPReader {
             return None;
         }
         let mut buffer = [0; MAX_RECORD_LENGTH];
-        match self.reader.read_exact(&mut buffer[..self.header.record_size as usize]) {
+        match self
+            .reader
+            .read_exact(&mut buffer[..self.header.record_size as usize])
+        {
             Ok(()) => (),
             Err(err) => return Some(Err(EGSError::Io(err))),
         };
@@ -204,7 +186,7 @@ impl PHSPWriter {
         LittleEndian::write_f32(&mut buffer[13..17], header.max_energy);
         LittleEndian::write_f32(&mut buffer[17..21], header.min_energy);
         LittleEndian::write_f32(&mut buffer[21..25], header.total_particles_in_source);
-        try!(writer.write_all(&buffer[..header.record_size as usize]));
+        writer.write_all(&buffer[..header.record_size as usize])?;
         Ok(PHSPWriter {
             header: *header,
             writer: writer,
@@ -223,7 +205,8 @@ impl PHSPWriter {
         if self.header.using_zlast {
             LittleEndian::write_f32(&mut buffer[28..32], record.weight);
         }
-        try!(self.writer.write_all(&buffer[..self.header.record_size as usize]));
+        self.writer
+            .write_all(&buffer[..self.header.record_size as usize])?;
         Ok(())
     }
 }
@@ -233,15 +216,19 @@ impl Header {
         (self.total_particles as usize + 1) * self.record_size as usize
     }
     pub fn similar_to(&self, other: &Header) -> bool {
-        self.mode == other.mode && self.total_particles == other.total_particles &&
-        self.total_photons == other.total_photons &&
-        self.max_energy.approx_eq_ulps(&other.max_energy, 10) &&
-        self.min_energy.approx_eq_ulps(&other.min_energy, 10) &&
-        self.total_particles_in_source.approx_eq_ulps(&other.total_particles_in_source, 2)
+        self.mode == other.mode
+            && self.total_particles == other.total_particles
+            && self.total_photons == other.total_photons
+            && self.max_energy.approx_eq_ulps(&other.max_energy, 10)
+            && self.min_energy.approx_eq_ulps(&other.min_energy, 10)
+            && self
+                .total_particles_in_source
+                .approx_eq_ulps(&other.total_particles_in_source, 2)
     }
     fn merge(&mut self, other: &Header) {
         assert!(&self.mode == &other.mode, "Merge mode mismatch");
-        self.total_particles = self.total_particles
+        self.total_particles = self
+            .total_particles
             .checked_add(other.total_particles)
             .expect("Too many particles, i32 overflow");
         self.total_photons += other.total_photons;
@@ -251,13 +238,16 @@ impl Header {
     }
 }
 
-
 impl Record {
     pub fn similar_to(&self, other: &Record) -> bool {
-        self.latch == other.latch && self.total_energy() - other.total_energy() < 0.01 &&
-        self.x_cm - other.x_cm < 0.01 && self.y_cm - other.y_cm < 0.01 &&
-        self.x_cos - other.x_cos < 0.01 && self.y_cos - other.y_cos < 0.01 &&
-        self.weight - other.weight < 0.01 && self.zlast == other.zlast
+        self.latch == other.latch
+            && self.total_energy() - other.total_energy() < 0.01
+            && self.x_cm - other.x_cm < 0.01
+            && self.y_cm - other.y_cm < 0.01
+            && self.x_cos - other.x_cos < 0.01
+            && self.y_cos - other.y_cos < 0.01
+            && self.weight - other.weight < 0.01
+            && self.zlast == other.zlast
     }
     pub fn bremsstrahlung_or_annihilation(&self) -> bool {
         self.latch & 1 != 0
@@ -318,19 +308,25 @@ impl Transform {
         let norm = (x_raw * x_raw + y_raw * y_raw).sqrt();
         let x = x_raw / norm;
         let y = y_raw / norm;
-        *matrix =
-            [[x * x - y * y, 2.0 * x * y, 0.0], [2.0 * x * y, y * y - x * x, 0.0], [0.0, 0.0, 1.0]];
+        *matrix = [
+            [x * x - y * y, 2.0 * x * y, 0.0],
+            [2.0 * x * y, y * y - x * x, 0.0],
+            [0.0, 0.0, 1.0],
+        ];
     }
     pub fn rotation(matrix: &mut [[f32; 3]; 3], theta: f32) {
-        *matrix =
-            [[theta.cos(), -theta.sin(), 0.0], [theta.sin(), theta.cos(), 0.0], [0.0, 0.0, 1.0]];
+        *matrix = [
+            [theta.cos(), -theta.sin(), 0.0],
+            [theta.sin(), theta.cos(), 0.0],
+            [0.0, 0.0, 1.0],
+        ];
     }
 }
 
 pub fn randomize(path: &Path, seed: &[usize]) -> EGSResult<()> {
     let mut rng: StdRng = SeedableRng::from_seed(seed);
-    let ifile = try!(File::open(path));
-    let mut reader = try!(PHSPReader::from(ifile));
+    let ifile = File::open(path)?;
+    let mut reader = PHSPReader::from(ifile)?;
     let header = reader.header;
     let max_per_batch = reader.header.total_particles as usize / BATCHES + 1;
     let mut batch_paths = Vec::with_capacity(BATCHES);
@@ -358,83 +354,87 @@ pub fn randomize(path: &Path, seed: &[usize]) -> EGSResult<()> {
             using_zlast: &reader.header.mode == b"MODE2",
             record_size: reader.header.record_size,
         };
-        let ofile = try!(File::create(&path));
-        let mut writer = try!(PHSPWriter::from(ofile, &header));
+        let ofile = File::create(&path)?;
+        let mut writer = PHSPWriter::from(ofile, &header)?;
         for record in records.iter() {
-            try!(writer.write(&record));
+            writer.write(&record)?;
         }
         records.clear();
     }
     drop(records);
     let mut readers = Vec::with_capacity(BATCHES);
     for path in batch_paths.iter() {
-        let ifile = try!(File::open(&path));
-        readers.push(try!(PHSPReader::from(ifile)));
+        let ifile = File::open(&path)?;
+        readers.push(PHSPReader::from(ifile)?);
     }
 
-    let ofile = try!(File::create(path));
-    let mut writer = try!(PHSPWriter::from(ofile, &header));
+    let ofile = File::create(path)?;
+    let mut writer = PHSPWriter::from(ofile, &header)?;
     while readers.len() != 0 {
         rng.shuffle(&mut readers);
-        for mut reader in readers.iter_mut() {
+        for reader in readers.iter_mut() {
             match reader.next() {
-                Some(record) => try!(writer.write(&record.unwrap())),
+                Some(record) => writer.write(&record.unwrap())?,
                 None => (),
             }
         }
         readers.retain(|r| !r.exhausted());
     }
     for path in batch_paths.iter() {
-        try!(remove_file(path));
+        remove_file(path)?;
     }
     Ok(())
 }
 
-
 pub fn combine(input_paths: &[&Path], output_path: &Path, delete: bool) -> EGSResult<()> {
     assert!(input_paths.len() > 0, "Cannot combine zero files");
-    let reader = try!(PHSPReader::from(try!(File::open(input_paths[0]))));
+    let reader = PHSPReader::from(File::open(input_paths[0])?)?;
     let mut final_header = reader.header;
     for path in input_paths[1..].iter() {
-        let reader = try!(PHSPReader::from(try!(File::open(path))));
+        let reader = PHSPReader::from(File::open(path)?)?;
         final_header.merge(&reader.header);
     }
     println!("Final header: {:?}", final_header);
-    let ofile = try!(File::create(output_path));
-    let mut writer = try!(PHSPWriter::from(ofile, &final_header));
+    let ofile = File::create(output_path)?;
+    let mut writer = PHSPWriter::from(ofile, &final_header)?;
     for path in input_paths.iter() {
-        let reader = try!(PHSPReader::from(try!(File::open(path))));
+        let reader = PHSPReader::from(File::open(path)?)?;
         for record in reader {
-            try!(writer.write(&record.unwrap()))
+            writer.write(&record.unwrap())?
         }
         if delete {
-            try!(remove_file(path));
+            remove_file(path)?;
         }
     }
     Ok(())
 }
 
 pub fn compare(path1: &Path, path2: &Path) -> EGSResult<()> {
-    let ifile1 = try!(File::open(path1));
-    let ifile2 = try!(File::open(path2));
-    let reader1 = try!(PHSPReader::from(ifile1));
-    let reader2 = try!(PHSPReader::from(ifile2));
+    let ifile1 = File::open(path1)?;
+    let ifile2 = File::open(path2)?;
+    let reader1 = PHSPReader::from(ifile1)?;
+    let reader2 = PHSPReader::from(ifile2)?;
     println!("                   First\t\tSecond");
-    println!("Total particles:   {0: <10}\t\t{1:}",
-             reader1.header.total_particles,
-             reader2.header.total_particles);
-    println!("Total photons:     {0: <10}\t\t{1}",
-             reader1.header.total_photons,
-             reader2.header.total_photons);
-    println!("Minimum energy:    {0: <10}\t\t{1}",
-             reader1.header.min_energy,
-             reader2.header.min_energy);
-    println!("Maximum energy:    {0: <10}\t\t{1}",
-             reader1.header.max_energy,
-             reader2.header.max_energy);
-    println!("Source particles:  {0: <10}\t\t{1}",
-             reader1.header.total_particles_in_source,
-             reader2.header.total_particles_in_source);
+    println!(
+        "Total particles:   {0: <10}\t\t{1:}",
+        reader1.header.total_particles, reader2.header.total_particles
+    );
+    println!(
+        "Total photons:     {0: <10}\t\t{1}",
+        reader1.header.total_photons, reader2.header.total_photons
+    );
+    println!(
+        "Minimum energy:    {0: <10}\t\t{1}",
+        reader1.header.min_energy, reader2.header.min_energy
+    );
+    println!(
+        "Maximum energy:    {0: <10}\t\t{1}",
+        reader1.header.max_energy, reader2.header.max_energy
+    );
+    println!(
+        "Source particles:  {0: <10}\t\t{1}",
+        reader1.header.total_particles_in_source, reader2.header.total_particles_in_source
+    );
     if !reader1.header.similar_to(&reader2.header) {
         println!("Headers different");
         return Err(EGSError::HeaderMismatch);
@@ -464,16 +464,18 @@ pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: u32, seed: &[usize])
         max_energy: 0.0,
         total_particles_in_source: 0.0,
     };
-    let mut writer = try!(PHSPWriter::from(try!(File::create(opath)), &header));
+    let mut writer = PHSPWriter::from(File::create(opath)?, &header)?;
     for path in ipaths.iter() {
-        let reader = try!(PHSPReader::from(try!(File::open(path))));
+        let reader = PHSPReader::from(File::open(path)?)?;
         assert!(!reader.header.using_zlast);
         println!("Found {} particles", reader.header.total_particles);
         header.total_particles_in_source += reader.header.total_particles_in_source;
         let records = reader.filter(|_| rng.gen_weighted_bool(rate));
         for record in records.map(|r| r.unwrap()) {
-            header.total_particles =
-                header.total_particles.checked_add(1).expect("Total particles overflow");
+            header.total_particles = header
+                .total_particles
+                .checked_add(1)
+                .expect("Total particles overflow");
             if !record.charged() {
                 header.total_photons += 1;
             }
@@ -481,96 +483,113 @@ pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: u32, seed: &[usize])
                 header.min_energy = header.min_energy.min(record.total_energy);
                 header.max_energy = header.max_energy.max(record.total_energy);
             }
-            try!(writer.write(&record));
+            writer.write(&record)?;
         }
         println!("Now have {} particles", header.total_particles);
     }
     header.total_particles_in_source /= rate as f32;
     drop(writer);
     // write out the header
-    let ofile = try!(OpenOptions::new().write(true).create(true).open(opath));
-    try!(PHSPWriter::from(ofile, &header));
+    let ofile = OpenOptions::new().write(true).create(true).open(opath)?;
+    PHSPWriter::from(ofile, &header)?;
     Ok(())
 }
 
 pub fn translate(input_path: &Path, output_path: &Path, x: f32, y: f32) -> EGSResult<()> {
-    let ifile = try!(File::open(input_path));
-    let reader = try!(PHSPReader::from(ifile));
+    let ifile = File::open(input_path)?;
+    let reader = PHSPReader::from(ifile)?;
     let ofile;
     if input_path == output_path {
-        println!("Translating {} in place by ({}, {})",
-                 input_path.display(),
-                 x,
-                 y);
-        ofile = try!(OpenOptions::new().write(true).create(true).open(output_path));
+        println!(
+            "Translating {} in place by ({}, {})",
+            input_path.display(),
+            x,
+            y
+        );
+        ofile = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(output_path)?;
     } else {
-        println!("Translating {} by ({}, {}) and saving to {}",
-                 input_path.display(),
-                 x,
-                 y,
-                 output_path.display());
-        ofile = try!(File::create(output_path));
+        println!(
+            "Translating {} by ({}, {}) and saving to {}",
+            input_path.display(),
+            x,
+            y,
+            output_path.display()
+        );
+        ofile = File::create(output_path)?;
     }
-    let mut writer = try!(PHSPWriter::from(ofile, &reader.header));
+    let mut writer = PHSPWriter::from(ofile, &reader.header)?;
     let n_particles = reader.header.total_particles;
     let mut records_translated = 0;
     for mut record in reader.map(|r| r.unwrap()) {
         record.translate(x, y);
-        try!(writer.write(&record));
+        writer.write(&record)?;
         records_translated += 1;
     }
-    println!("Translated {} records, expected {}",
-             records_translated,
-             n_particles);
+    println!(
+        "Translated {} records, expected {}",
+        records_translated, n_particles
+    );
     Ok(())
 }
 
-
 pub fn transform(input_path: &Path, output_path: &Path, matrix: &[[f32; 3]; 3]) -> EGSResult<()> {
-    let ifile = try!(File::open(input_path));
-    let reader = try!(PHSPReader::from(ifile));
+    let ifile = File::open(input_path)?;
+    let reader = PHSPReader::from(ifile)?;
     let ofile;
     if input_path == output_path {
         println!("Transforming {} in place", input_path.display());
-        ofile = try!(OpenOptions::new().write(true).create(true).open(output_path));
+        ofile = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(output_path)?;
     } else {
         // different path (create/truncate destination)
-        println!("Transforming {} and saving to {}",
-                 input_path.display(),
-                 output_path.display());
-        ofile = try!(File::create(output_path));
+        println!(
+            "Transforming {} and saving to {}",
+            input_path.display(),
+            output_path.display()
+        );
+        ofile = File::create(output_path)?;
     }
-    let mut writer = try!(PHSPWriter::from(ofile, &reader.header));
+    let mut writer = PHSPWriter::from(ofile, &reader.header)?;
     let n_particles = reader.header.total_particles;
     let mut records_transformed = 0;
     for mut record in reader.map(|r| r.unwrap()) {
         record.transform(&matrix);
-        try!(writer.write(&record));
+        writer.write(&record)?;
         records_transformed += 1;
     }
-    println!("Transformed {} records, expected {}",
-             records_transformed,
-             n_particles);
+    println!(
+        "Transformed {} records, expected {}",
+        records_transformed, n_particles
+    );
     Ok(())
 }
 
-pub fn reweight(input_path: &Path,
-                output_path: &Path,
-                f: &Fn(f32) -> f32,
-                number_bins: usize,
-                max_radius: f32)
-                -> EGSResult<()> {
-    let input_file = try!(File::open(input_path));
+pub fn reweight(
+    input_path: &Path,
+    output_path: &Path,
+    f: &dyn Fn(f32) -> f32,
+    number_bins: usize,
+    max_radius: f32,
+) -> EGSResult<()> {
+    let input_file = File::open(input_path)?;
     let output_file;
     if input_path == output_path {
         println!("Reweighting in-place");
-        output_file = try!(OpenOptions::new().write(true).create(true).open(output_path));
+        output_file = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(output_path)?;
     } else {
         println!("Rewighting and saving to {}", output_path.display());
-        output_file = try!(File::create(output_path));
+        output_file = File::create(output_path)?;
     }
-    let reader1 = try!(PHSPReader::from(input_file));
-    let mut writer1 = try!(PHSPWriter::from(output_file, &reader1.header));
+    let reader1 = PHSPReader::from(input_file)?;
+    let mut writer1 = PHSPWriter::from(output_file, &reader1.header)?;
     let bin_size = max_radius / number_bins as f32;
     println!("Bin size is {}", bin_size);
     let mut sum_old_weight = 0.0;
@@ -580,22 +599,25 @@ pub fn reweight(input_path: &Path,
         let r = (record.x_cm * record.x_cm + record.y_cm * record.y_cm).sqrt();
         record.weight *= f(r);
         sum_new_weight += record.weight;
-        try!(writer1.write(&record));
+        writer1.write(&record)?;
     }
     drop(writer1);
-    let ifile2 = try!(File::open(input_path));
+    let ifile2 = File::open(input_path)?;
     let ofile2;
     if input_path == output_path {
-        ofile2 = try!(OpenOptions::new().write(true).create(true).open(output_path));
+        ofile2 = OpenOptions::new()
+            .write(true)
+            .create(true)
+            .open(output_path)?;
     } else {
-        ofile2 = try!(File::create(output_path));
+        ofile2 = File::create(output_path)?;
     }
-    let reader2 = try!(PHSPReader::from(ifile2));
-    let mut writer2 = try!(PHSPWriter::from(ofile2, &reader2.header));
+    let reader2 = PHSPReader::from(ifile2)?;
+    let mut writer2 = PHSPWriter::from(ofile2, &reader2.header)?;
     let factor = sum_old_weight / sum_new_weight;
     for mut record in reader2.map(|r| r.unwrap()) {
         record.weight *= factor;
-        try!(writer2.write(&record));
+        writer2.write(&record)?;
     }
     Ok(())
 }

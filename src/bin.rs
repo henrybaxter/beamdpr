@@ -1,19 +1,25 @@
 extern crate clap;
 extern crate egsphsp;
 
-use std::path::Path;
-use std::error::Error;
-use std::process::exit;
 use std::f32;
 use std::fs::File;
+use std::path::Path;
+use std::process::exit;
 
-use clap::{App, AppSettings, SubCommand, Arg};
+use clap::{App, AppSettings, Arg, SubCommand};
 
 use egsphsp::PHSPReader;
-use egsphsp::{translate, transform, Transform, combine, compare, randomize, sample_combine, reweight};
+use egsphsp::{
+    combine, compare, randomize, reweight, sample_combine, transform, translate, Transform,
+};
 
 fn floatify(s: &str) -> f32 {
-    s.trim().trim_left_matches("(").trim_right_matches(")").trim().parse::<f32>().unwrap()
+    s.trim()
+        .trim_start_matches("(")
+        .trim_end_matches(")")
+        .trim()
+        .parse::<f32>()
+        .unwrap()
 }
 
 fn main() {
@@ -189,20 +195,27 @@ fn main() {
     let result = if subcommand == "combine" {
         // println!("combine");
         let sub_matches = matches.subcommand_matches("combine").unwrap();
-        let input_paths: Vec<&Path> = sub_matches.values_of("input")
+        let input_paths: Vec<&Path> = sub_matches
+            .values_of("input")
             .unwrap()
             .map(|s| Path::new(s))
             .collect();
         let output_path = Path::new(sub_matches.value_of("output").unwrap());
-        println!("combine {} files into {}",
-                 input_paths.len(),
-                 output_path.display());
+        println!(
+            "combine {} files into {}",
+            input_paths.len(),
+            output_path.display()
+        );
         combine(&input_paths, output_path, sub_matches.is_present("delete"))
     } else if subcommand == "print" {
         // prints the fields specified?
         let sub_matches = matches.subcommand_matches("print").unwrap();
         let input_path = Path::new(sub_matches.value_of("input").unwrap());
-        let number = sub_matches.value_of("number").unwrap().parse::<usize>().unwrap();
+        let number = sub_matches
+            .value_of("number")
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
         let fields: Vec<&str> = sub_matches.values_of("fields").unwrap().collect();
         let file = File::open(input_path).unwrap();
         let reader = PHSPReader::from(file).unwrap();
@@ -221,8 +234,11 @@ fn main() {
                     &"y_cos" => print!("{:<16}", record.y_cos),
                     &"produced" => print!("{:<16}", record.bremsstrahlung_or_annihilation()),
                     &"charged" => print!("{:<16}", record.charged()),
-                    &"r" => print!("{:<16}", (record.x_cm * record.x_cm + record.y_cm * record.y_cm).sqrt()),
-                    _ => panic!("Unknown field {}", field)
+                    &"r" => print!(
+                        "{:<16}",
+                        (record.x_cm * record.x_cm + record.y_cm * record.y_cm).sqrt()
+                    ),
+                    _ => panic!("Unknown field {}", field),
                 };
             }
             println!("");
@@ -243,27 +259,45 @@ fn main() {
         let c = floatify(sub_matches.value_of("c").unwrap());
         println!("unwrapping r");
         let r = floatify(sub_matches.value_of("r").unwrap());
-        let bins = sub_matches.value_of("bins").unwrap().parse::<usize>().unwrap();
+        let bins = sub_matches
+            .value_of("bins")
+            .unwrap()
+            .parse::<usize>()
+            .unwrap();
         reweight(input_path, output_path, &|x| c * x, bins, r)
     } else if subcommand == "sample-combine" {
         let sub_matches = matches.subcommand_matches("sample-combine").unwrap();
-        let input_paths: Vec<&Path> = sub_matches.values_of("input")
+        let input_paths: Vec<&Path> = sub_matches
+            .values_of("input")
             .unwrap()
             .map(|s| Path::new(s))
             .collect();
         let output_path = Path::new(sub_matches.value_of("output").unwrap());
-        let rate = sub_matches.value_of("rate").unwrap().parse::<u32>().unwrap();
-        let seed: &[_] = &[sub_matches.value_of("seed").unwrap().parse::<usize>().unwrap()];
-        println!("sample combine {} files into {} at 1 in {}",
-                 input_paths.len(),
-                 output_path.display(),
-                 rate);
+        let rate = sub_matches
+            .value_of("rate")
+            .unwrap()
+            .parse::<u32>()
+            .unwrap();
+        let seed: &[_] = &[sub_matches
+            .value_of("seed")
+            .unwrap()
+            .parse::<usize>()
+            .unwrap()];
+        println!(
+            "sample combine {} files into {} at 1 in {}",
+            input_paths.len(),
+            output_path.display(),
+            rate
+        );
         sample_combine(&input_paths, output_path, rate, seed)
-
     } else if subcommand == "randomize" {
         let sub_matches = matches.subcommand_matches("randomize").unwrap();
         let path = Path::new(sub_matches.value_of("input").unwrap());
-        let seed: &[_] = &[sub_matches.value_of("seed").unwrap().parse::<usize>().unwrap()];
+        let seed: &[_] = &[sub_matches
+            .value_of("seed")
+            .unwrap()
+            .parse::<usize>()
+            .unwrap()];
         randomize(path, seed)
     } else if subcommand == "compare" {
         // now we're going to print the header information of each
@@ -295,25 +329,29 @@ fn main() {
             println!("\t\"total_photons\": {},", header.total_photons);
             println!("\t\"maximum_energy\": {},", header.max_energy);
             println!("\t\"minimum_energy\": {},", header.min_energy);
-            println!("\t\"total_particles_in_source\": {}",
-                     header.total_particles_in_source);
+            println!(
+                "\t\"total_particles_in_source\": {}",
+                header.total_particles_in_source
+            );
             println!("}}");
         } else {
             println!("Total particles: {}", header.total_particles);
             println!("Total photons: {}", header.total_photons);
-            println!("Total electrons/positrons: {}",
-                     header.total_particles - header.total_photons);
+            println!(
+                "Total electrons/positrons: {}",
+                header.total_particles - header.total_photons
+            );
             println!("Maximum energy: {:.*} MeV", 4, header.max_energy);
             println!("Minimum energy: {:.*} MeV", 4, header.min_energy);
-            println!("Incident particles from source: {:.*}",
-                     1,
-                     header.total_particles_in_source);
+            println!(
+                "Incident particles from source: {:.*}",
+                1, header.total_particles_in_source
+            );
             // println!("X position in [{}, {}], Y position in [{}, {}]",
             // min_x,
             // max_x,
             // min_y,
             // max_y);
-
         }
         Ok(())
     } else {
@@ -330,11 +368,13 @@ fn main() {
                     translate(input_path, input_path, x, y)
                 } else {
                     let output_path = Path::new(sub_matches.value_of("output").unwrap());
-                    println!("translate {} by ({}, {}) and write to {}",
-                             input_path.display(),
-                             x,
-                             y,
-                             output_path.display());
+                    println!(
+                        "translate {} by ({}, {}) and write to {}",
+                        input_path.display(),
+                        x,
+                        y,
+                        output_path.display()
+                    );
                     translate(input_path, output_path, x, y)
                 }
             }
@@ -350,11 +390,13 @@ fn main() {
                     transform(input_path, input_path, &matrix)
                 } else {
                     let output_path = Path::new(sub_matches.value_of("output").unwrap());
-                    println!("reflect {} around ({}, {}) and write to {}",
-                             input_path.display(),
-                             x,
-                             y,
-                             output_path.display());
+                    println!(
+                        "reflect {} around ({}, {}) and write to {}",
+                        input_path.display(),
+                        x,
+                        y,
+                        output_path.display()
+                    );
                     transform(input_path, output_path, &matrix)
                 }
             }
@@ -369,10 +411,12 @@ fn main() {
                     transform(input_path, input_path, &matrix)
                 } else {
                     let output_path = Path::new(sub_matches.value_of("output").unwrap());
-                    println!("rotate {} by {} radians and write to {}",
-                             input_path.display(),
-                             angle,
-                             output_path.display());
+                    println!(
+                        "rotate {} by {} radians and write to {}",
+                        input_path.display(),
+                        angle,
+                        output_path.display()
+                    );
                     transform(input_path, output_path, &matrix)
                 }
             }
@@ -383,7 +427,7 @@ fn main() {
     match result {
         Ok(()) => exit(0),
         Err(err) => {
-            println!("Error: {}", err.description());
+            println!("Error: {}", err.to_string());
             exit(1);
         }
     };

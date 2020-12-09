@@ -35,6 +35,13 @@ fn first_file_header_correct() {
         )
     );
     assert!(
+        reader.header.total_particles_in_source == 10000.0,
+        format!(
+            "Total particles in source incorrect, expected {:?} but found {:?}",
+            10000.00, reader.header.total_particles_in_source
+        )
+    );
+    assert!(
         reader.header.total_photons == 8190,
         format!(
             "Total photons incorrect, found {:?}",
@@ -71,6 +78,13 @@ fn second_file_header_correct() {
         format!(
             "Total particles incorrect, found {:?}, header.total_particles",
             reader.header.total_particles
+        )
+    );
+    assert!(
+        reader.header.total_particles_in_source == 10000.0,
+        format!(
+            "Total particles in source incorrect, expected {:?} but found {:?}",
+            10000.00, reader.header.total_particles_in_source
         )
     );
     assert!(
@@ -177,11 +191,19 @@ fn combine_samples() {
     let ifile = File::open(output_path).unwrap();
     let reader = PHSPReader::from(ifile).unwrap();
     let expected = 9345 * 2 / 10;
+    let expected_in_source = 10000.0 * 2.0 / 10.0;
     assert!(
         (reader.header.total_particles - expected).abs() < 100,
         format!(
             "expected {} particles but found {}",
             expected, reader.header.total_particles
+        )
+    );
+    assert!(
+        (reader.header.total_particles_in_source - expected_in_source as f32) < 100 as f32,
+        format!(
+            "expected {} particles in source but found {}",
+            expected_in_source, reader.header.total_particles_in_source
         )
     )
 }

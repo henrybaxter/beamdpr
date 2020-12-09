@@ -490,7 +490,7 @@ pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: f64, seed: u64) -> E
         }
         println!("Now have {} particles", header.total_particles);
     }
-    header.total_particles_in_source /= rate as f32;
+    header.total_particles_in_source *= rate as f32;
     drop(writer);
     // write out the header
     let ofile = OpenOptions::new().write(true).create(true).open(opath)?;

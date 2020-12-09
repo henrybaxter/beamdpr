@@ -10,3 +10,6 @@
 
 # python venv for testing
 .venv
+
+# custom test data ignored
+test_data/test_combined_samples.egsphsp1

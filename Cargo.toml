@@ -11,7 +11,6 @@ documentation = "https://github.com/henrybaxter/beamdpr"
 homepage = "https://github.com/henrybaxter/beamdpr"
 repository = "https://github.com/henrybaxter/beamdpr"
 
-readme = "README.rst"
 keywords = ["egsphsp", "egsphsp1", "beamdp", "beamnrc", "egsnrc"]
 
 [dependencies]

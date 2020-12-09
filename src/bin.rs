@@ -125,7 +125,7 @@ fn main() {
                 .required(false)
                 .long("rate")
                 .takes_value(true)
-                .help("Inverse sample rate - 10 means take rougly 1 out of every 10 particles")))
+                .help("Inverse sample rate - 10 means take roughly 1 out of every 10 particles")))
         .subcommand(SubCommand::with_name("translate")
             .about("Translate using X and Y in centimeters. Use parantheses around negatives.")
             .arg(Arg::with_name("in-place")
@@ -273,16 +273,17 @@ fn main() {
             .map(|s| Path::new(s))
             .collect();
         let output_path = Path::new(sub_matches.value_of("output").unwrap());
-        let rate = sub_matches
-            .value_of("rate")
-            .unwrap()
-            .parse::<u32>()
-            .unwrap();
-        let seed: &[_] = &[sub_matches
+        let rate = 1.0
+            / sub_matches
+                .value_of("rate")
+                .unwrap()
+                .parse::<f64>()
+                .unwrap();
+        let seed = sub_matches
             .value_of("seed")
             .unwrap()
-            .parse::<usize>()
-            .unwrap()];
+            .parse::<u64>()
+            .unwrap();
         println!(
             "sample combine {} files into {} at 1 in {}",
             input_paths.len(),
@@ -293,11 +294,11 @@ fn main() {
     } else if subcommand == "randomize" {
         let sub_matches = matches.subcommand_matches("randomize").unwrap();
         let path = Path::new(sub_matches.value_of("input").unwrap());
-        let seed: &[_] = &[sub_matches
+        let seed = sub_matches
             .value_of("seed")
             .unwrap()
-            .parse::<usize>()
-            .unwrap()];
+            .parse::<u64>()
+            .unwrap();
         randomize(path, seed)
     } else if subcommand == "compare" {
         // now we're going to print the header information of each

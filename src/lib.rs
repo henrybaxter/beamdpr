@@ -11,7 +11,7 @@ use std::path::Path;
 
 use byteorder::{ByteOrder, LittleEndian};
 use float_cmp::ApproxEqUlps;
-use rand::{Rng, SeedableRng, StdRng};
+use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
 
 const HEADER_LENGTH: usize = 25;
 const MAX_RECORD_LENGTH: usize = 32;
@@ -323,8 +323,8 @@ impl Transform {
     }
 }
 
-pub fn randomize(path: &Path, seed: &[usize]) -> EGSResult<()> {
-    let mut rng: StdRng = SeedableRng::from_seed(seed);
+pub fn randomize(path: &Path, seed: u64) -> EGSResult<()> {
+    let mut rng = StdRng::seed_from_u64(seed);
     let ifile = File::open(path)?;
     let mut reader = PHSPReader::from(ifile)?;
     let header = reader.header;
@@ -343,7 +343,10 @@ pub fn randomize(path: &Path, seed: &[usize]) -> EGSResult<()> {
                 None => (),
             }
         }
-        rng.shuffle(&mut records);
+        //let mut vec: Vec<Record> = records.collect();
+
+        records.shuffle(&mut rng);
+
         let header = Header {
             mode: reader.header.mode,
             total_particles: records.len() as i32,
@@ -371,7 +374,7 @@ pub fn randomize(path: &Path, seed: &[usize]) -> EGSResult<()> {
     let ofile = File::create(path)?;
     let mut writer = PHSPWriter::from(ofile, &header)?;
     while readers.len() != 0 {
-        rng.shuffle(&mut readers);
+        readers.shuffle(&mut rng);
         for reader in readers.iter_mut() {
             match reader.next() {
                 Some(record) => writer.write(&record.unwrap())?,
@@ -451,9 +454,9 @@ pub fn compare(path1: &Path, path2: &Path) -> EGSResult<()> {
     Ok(())
 }
 
-pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: u32, seed: &[usize]) -> EGSResult<()> {
+pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: f64, seed: u64) -> EGSResult<()> {
     assert!(ipaths.len() > 0, "Cannot combine zero files");
-    let mut rng: StdRng = SeedableRng::from_seed(seed);
+    let mut rng = StdRng::seed_from_u64(seed);
     let mut header = Header {
         mode: *b"MODE0",
         record_size: 28,
@@ -470,7 +473,7 @@ pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: u32, seed: &[usize])
         assert!(!reader.header.using_zlast);
         println!("Found {} particles", reader.header.total_particles);
         header.total_particles_in_source += reader.header.total_particles_in_source;
-        let records = reader.filter(|_| rng.gen_weighted_bool(rate));
+        let records = reader.filter(|_| rng.gen_bool(rate));
         for record in records.map(|r| r.unwrap()) {
             header.total_particles = header
                 .total_particles

@@ -172,7 +172,7 @@ Now reflect around the vector (1, 0):
 
 ```
 
-    $ beamdpr rotate first.egsphsp1 reflected.egsphsp1 -x 1
+    $ beamdpr reflect first.egsphsp1 reflected.egsphsp1 -x 1
 
     $ ls
     first.egsphsp1 reflected.egsphsp1
@@ -196,7 +196,7 @@ Reflect in the vector (-1, 0) in-place:
 
 ```
 
-    $ beamdpr rotate first.egsphsp1 -i -x -1
+    $ beamdpr reflect first.egsphsp1 -i -x -1
 
 
 ```
@@ -224,6 +224,16 @@ So make a combined version:
     combined.egsphsp1
 
 ```
+
+## Other commands
+
+Run `beamdpr <command> --help` for full options.
+
+- `beamdpr stats first.egsphsp1` - total particles, photons, energy range, source histories. Add `--format json` for machine-readable output.
+- `beamdpr print -f energy x y first.egsphsp1 -n 20` — dump selected fields for the first N records. Available fields: `energy`, `weight`, `x`, `y`, `x_cos`, `y_cos`, `r`, `produced`, `charged`.
+- `beamdpr compare first.egsphsp1 second.egsphsp1` — compare two files header-by-header and record-by-record; exits non-zero on mismatch.
+- `beamdpr randomize first.egsphsp1 --seed 42` — shuffle particle order in-place.
+- `beamdpr reweight first.egsphsp1 -c 1.5 -r 5` — rescale weights as `c * r` (radius from z axis), preserving total weight magnitude. Use `-o` for a new file.
 
 # Help
 

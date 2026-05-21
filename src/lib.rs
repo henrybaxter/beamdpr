@@ -255,13 +255,17 @@ impl Record {
         self.latch & 0xfffffe
     }
     pub fn region_number(&self) -> u32 {
-        self.latch & 0xf000000
+        // EGSnrc: region-of-origin is bits 24-28 (5 bits), used as the value
+        // after >>24. See pirs509a-beamnrc.tex:4954-4989.
+        (self.latch >> 24) & 0x1f
     }
     pub fn b29(&self) -> bool {
         self.latch & (1 << 29) != 0
     }
     pub fn charged(&self) -> bool {
-        self.latch & (1 << 30) != 0
+        // EGSnrc encodes IQ in bits 29-30: electron sets bit 30, positron
+        // sets bit 29 alone (phsp_macros.mortran:$GET_E_NPASS_IQ).
+        (self.latch >> 29) & 0b11 != 0
     }
     pub fn crossed_multiple(&self) -> bool {
         self.latch & (1 << 31) != 0
@@ -464,7 +468,9 @@ pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: f64, seed: u64) -> E
     let mut writer = PHSPWriter::from(File::create(opath)?, &header)?;
     for path in ipaths.iter() {
         let reader = PHSPReader::from(File::open(path)?)?;
-        assert!(!reader.header.using_zlast);
+        if reader.header.using_zlast {
+            return Err(EGSError::ModeMismatch);
+        }
         println!("Found {} particles", reader.header.total_particles);
         header.total_particles_in_source += reader.header.total_particles_in_source;
         let records = reader.filter(|_| rng.random_bool(rate));
@@ -585,9 +591,10 @@ pub fn reweight(
     let mut sum_old_weight = 0.0_f32;
     let mut sum_new_weight = 0.0_f32;
     for record in reader1.map(|r| r.unwrap()) {
-        sum_old_weight += record.weight;
+        let w = record.get_weight();
+        sum_old_weight += w;
         let r = (record.x_cm * record.x_cm + record.y_cm * record.y_cm).sqrt();
-        sum_new_weight += record.weight * f(r);
+        sum_new_weight += w * f(r);
     }
 
     let reader2 = PHSPReader::from(File::open(input_path)?)?;
@@ -692,6 +699,75 @@ mod tests {
     }
 
     #[test]
+    fn reweight_uses_abs_weight_for_normalization() {
+        // WT sign carries the Z direction (per EGSnrc / lib.rs:38).
+        // reweight() must conserve total weight *magnitude*. If sum_old_weight
+        // and sum_new_weight accumulate signed weights, a mix of +/- weights
+        // (forward- and backward-going particles) makes the normalization
+        // factor blow up or flip sign.
+        let input = tmp_path("reweight_signed_in");
+        let output = tmp_path("reweight_signed_out");
+        let header = Header {
+            mode: *b"MODE0",
+            total_particles: 4,
+            total_photons: 4,
+            min_energy: 1.0,
+            max_energy: 1.0,
+            total_particles_in_source: 10.0,
+            record_size: 28,
+            using_zlast: false,
+        };
+        // 2 forward (weight=+1), 2 backward (weight=-1), all at r=1.
+        let mut records = vec![
+            make_record(0, 1.0, 1.0, 0.0, None),
+            make_record(0, 1.0, 0.0, 1.0, None),
+            make_record(0, 1.0, -1.0, 0.0, None),
+            make_record(0, 1.0, 0.0, -1.0, None),
+        ];
+        records[0].weight = 1.0;
+        records[1].weight = 1.0;
+        records[2].weight = -1.0;
+        records[3].weight = -1.0;
+        for r in records.iter_mut() {
+            r.x_cos = 0.0;
+            r.y_cos = 0.0;
+        }
+        write_phsp(&input, &header, &records);
+
+        // f(r) = 1 (constant). sum_old_|w| = 4, sum_new_|w| = 4, factor = 1.
+        // After reweight, magnitudes should all be 1.0, signs preserved.
+        reweight(&input, &output, &|_r| 1.0, 10, 5.0).unwrap();
+
+        let reader = PHSPReader::from(File::open(&output).unwrap()).unwrap();
+        let out: Vec<Record> = reader.map(|r| r.unwrap()).collect();
+        let _ = remove_file(&input);
+        let _ = remove_file(&output);
+
+        let expected_sign = [1.0_f32, 1.0, -1.0, -1.0];
+        for (i, r) in out.iter().enumerate() {
+            assert!(
+                r.weight.is_finite(),
+                "record {}: weight became non-finite ({}) due to signed-sum normalization",
+                i,
+                r.weight
+            );
+            assert!(
+                (r.weight.abs() - 1.0).abs() < 1e-4,
+                "record {}: expected |weight| 1.0, got |{}| (factor was wrong)",
+                i,
+                r.weight
+            );
+            assert!(
+                r.weight.signum() == expected_sign[i],
+                "record {}: expected sign {}, got {}",
+                i,
+                expected_sign[i],
+                r.weight.signum()
+            );
+        }
+    }
+
+    #[test]
     fn sample_combine_uses_abs_energy_for_min_max() {
         let input = tmp_path("sample_in");
         let output = tmp_path("sample_out");
@@ -730,6 +806,85 @@ mod tests {
             "min_energy should be 0.5, got {}",
             got.min_energy
         );
+    }
+
+    #[test]
+    fn sample_combine_returns_mode_mismatch_on_mode2_input() {
+        // sample_combine is MODE0-only; MODE2 input must return a clean
+        // EGSError::ModeMismatch, not panic via assert!().
+        let input = tmp_path("sample_mode2_in");
+        let output = tmp_path("sample_mode2_out");
+        let header = Header {
+            mode: *b"MODE2",
+            total_particles: 1,
+            total_photons: 1,
+            min_energy: 0.5,
+            max_energy: 1.0,
+            total_particles_in_source: 1.0,
+            record_size: 32,
+            using_zlast: true,
+        };
+        let r = make_record(0, 1.0, 0.0, 0.0, Some(2.5));
+        write_phsp(&input, &header, &[r]);
+
+        let result = sample_combine(&[&input], &output, 1.0, 0);
+        let _ = remove_file(&input);
+        let _ = remove_file(&output);
+
+        assert!(
+            matches!(result, Err(EGSError::ModeMismatch)),
+            "expected Err(ModeMismatch), got {:?}",
+            result
+        );
+    }
+
+    #[test]
+    fn region_number_decodes_five_bits_at_offset_24() {
+        // Per EGSnrc beamnrc docs (pirs509a-beamnrc.tex:4954-4989) and
+        // beamnrc_user_macros.mortran:121-128 ($LATCH_NUMBER_OF_BITS=5):
+        // region-of-origin lives in bits 24-28 and is consumed after >>24.
+        // Today's mask 0xf000000 drops bit 28 and doesn't shift.
+        let all_five_bits = make_record(0x1f000000, 1.0, 0.0, 0.0, None);
+        assert_eq!(
+            all_five_bits.region_number(),
+            31,
+            "all 5 region bits set should decode to 31"
+        );
+
+        let only_bit_28 = make_record(0x10000000, 1.0, 0.0, 0.0, None);
+        assert_eq!(
+            only_bit_28.region_number(),
+            16,
+            "bit 28 alone should decode to 16 (currently lost by 0xf000000 mask)"
+        );
+
+        // Low bits (region-traversed bits 1-23, charge bits 29-30, NPASS bit 31)
+        // must NOT bleed into the region-of-origin value.
+        let noisy = make_record(0xff_ff_ff_ff, 1.0, 0.0, 0.0, None);
+        assert_eq!(
+            noisy.region_number(),
+            31,
+            "region_number must mask off bits 29-31 and bits 0-23"
+        );
+    }
+
+    #[test]
+    fn charged_is_true_for_positrons_via_bit_29() {
+        // Per EGSnrc phsp_macros.mortran:234-262 ($GET_E_NPASS_IQ):
+        //   bit 30 set            => electron (IQ = -1)
+        //   bit 30 clear, bit 29  => positron (IQ = +1)
+        //   both clear            => photon
+        let electron = make_record(1 << 30, 1.0, 0.0, 0.0, None);
+        let positron = make_record(1 << 29, 1.0, 0.0, 0.0, None);
+        let photon = make_record(0, 1.0, 0.0, 0.0, None);
+
+        assert!(electron.charged(), "electron (bit 30) must be charged");
+        assert!(
+            positron.charged(),
+            "positron (bit 29 alone) must be charged \
+             — currently slipping through and being counted as a photon"
+        );
+        assert!(!photon.charged(), "photon (no charge bits) must not be charged");
     }
 
     #[test]

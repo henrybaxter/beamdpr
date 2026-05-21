@@ -199,7 +199,10 @@ impl PHSPWriter {
         LittleEndian::write_f32(&mut buffer[20..24], record.y_cos);
         LittleEndian::write_f32(&mut buffer[24..28], record.weight);
         if self.header.using_zlast {
-            LittleEndian::write_f32(&mut buffer[28..32], record.weight);
+            LittleEndian::write_f32(
+                &mut buffer[28..32],
+                record.zlast.expect("MODE2 record missing zlast"),
+            );
         }
         self.writer
             .write_all(&buffer[..self.header.record_size as usize])?;
@@ -237,12 +240,12 @@ impl Header {
 impl Record {
     pub fn similar_to(&self, other: &Record) -> bool {
         self.latch == other.latch
-            && self.total_energy() - other.total_energy() < 0.01
-            && self.x_cm - other.x_cm < 0.01
-            && self.y_cm - other.y_cm < 0.01
-            && self.x_cos - other.x_cos < 0.01
-            && self.y_cos - other.y_cos < 0.01
-            && self.weight - other.weight < 0.01
+            && (self.total_energy() - other.total_energy()).abs() < 0.01
+            && (self.x_cm - other.x_cm).abs() < 0.01
+            && (self.y_cm - other.y_cm).abs() < 0.01
+            && (self.x_cos - other.x_cos).abs() < 0.01
+            && (self.y_cos - other.y_cos).abs() < 0.01
+            && (self.weight - other.weight).abs() < 0.01
             && self.zlast == other.zlast
     }
     pub fn bremsstrahlung_or_annihilation(&self) -> bool {
@@ -261,7 +264,7 @@ impl Record {
         self.latch & (1 << 30) != 0
     }
     pub fn crossed_multiple(&self) -> bool {
-        self.latch & (1 << 30) != 0
+        self.latch & (1 << 31) != 0
     }
     pub fn get_weight(&self) -> f32 {
         self.weight.abs()
@@ -294,8 +297,9 @@ impl Record {
         self.y_cm = matrix[1][0] * x_cm + matrix[1][1] * y_cm + matrix[1][2] * 1.0;
         let x_cos = self.x_cos;
         let y_cos = self.y_cos;
-        self.x_cos = matrix[0][0] * x_cos + matrix[0][1] * y_cos + matrix[0][2] * self.z_cos();
-        self.y_cos = matrix[1][0] * x_cos + matrix[1][1] * y_cos + matrix[1][2] * self.z_cos();
+        let z_cos = self.z_cos();
+        self.x_cos = matrix[0][0] * x_cos + matrix[0][1] * y_cos + matrix[0][2] * z_cos;
+        self.y_cos = matrix[1][0] * x_cos + matrix[1][1] * y_cos + matrix[1][2] * z_cos;
     }
 }
 
@@ -472,10 +476,9 @@ pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: f64, seed: u64) -> E
             if !record.charged() {
                 header.total_photons += 1;
             }
-            if record.total_energy > 0.0 {
-                header.min_energy = header.min_energy.min(record.total_energy);
-                header.max_energy = header.max_energy.max(record.total_energy);
-            }
+            let energy = record.total_energy();
+            header.min_energy = header.min_energy.min(energy);
+            header.max_energy = header.max_energy.max(energy);
             writer.write(&record)?;
         }
         println!("Now have {} particles", header.total_particles);
@@ -569,37 +572,26 @@ pub fn reweight(
     input_path: &Path,
     output_path: &Path,
     f: &dyn Fn(f32) -> f32,
-    number_bins: usize,
-    max_radius: f32,
+    _number_bins: usize,
+    _max_radius: f32,
 ) -> EGSResult<()> {
-    let input_file = File::open(input_path)?;
-    let output_file = if input_path == output_path {
+    if input_path == output_path {
         println!("Reweighting in-place");
-        OpenOptions::new()
-            .write(true)
-            .create(true)
-            .truncate(false)
-            .open(output_path)?
     } else {
-        println!("Rewighting and saving to {}", output_path.display());
-        File::create(output_path)?
-    };
-    let reader1 = PHSPReader::from(input_file)?;
-    let mut writer1 = PHSPWriter::from(output_file, &reader1.header)?;
-    let bin_size = max_radius / number_bins as f32;
-    println!("Bin size is {}", bin_size);
-    let mut sum_old_weight = 0.0;
-    let mut sum_new_weight = 0.0;
-    for mut record in reader1.map(|r| r.unwrap()) {
+        println!("Reweighting and saving to {}", output_path.display());
+    }
+
+    let reader1 = PHSPReader::from(File::open(input_path)?)?;
+    let mut sum_old_weight = 0.0_f32;
+    let mut sum_new_weight = 0.0_f32;
+    for record in reader1.map(|r| r.unwrap()) {
         sum_old_weight += record.weight;
         let r = (record.x_cm * record.x_cm + record.y_cm * record.y_cm).sqrt();
-        record.weight *= f(r);
-        sum_new_weight += record.weight;
-        writer1.write(&record)?;
+        sum_new_weight += record.weight * f(r);
     }
-    drop(writer1);
-    let ifile2 = File::open(input_path)?;
-    let ofile2 = if input_path == output_path {
+
+    let reader2 = PHSPReader::from(File::open(input_path)?)?;
+    let output_file = if input_path == output_path {
         OpenOptions::new()
             .write(true)
             .create(true)
@@ -608,12 +600,208 @@ pub fn reweight(
     } else {
         File::create(output_path)?
     };
-    let reader2 = PHSPReader::from(ifile2)?;
-    let mut writer2 = PHSPWriter::from(ofile2, &reader2.header)?;
+    let mut writer = PHSPWriter::from(output_file, &reader2.header)?;
     let factor = sum_old_weight / sum_new_weight;
     for mut record in reader2.map(|r| r.unwrap()) {
-        record.weight *= factor;
-        writer2.write(&record)?;
+        let r = (record.x_cm * record.x_cm + record.y_cm * record.y_cm).sqrt();
+        record.weight *= f(r) * factor;
+        writer.write(&record)?;
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::atomic::{AtomicU64, Ordering};
+
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
+
+    fn tmp_path(label: &str) -> std::path::PathBuf {
+        let n = COUNTER.fetch_add(1, Ordering::SeqCst);
+        let pid = std::process::id();
+        std::env::temp_dir().join(format!("beamdpr_test_{}_{}_{}.egsphsp1", label, pid, n))
+    }
+
+    fn make_record(latch: u32, energy: f32, x: f32, y: f32, zlast: Option<f32>) -> Record {
+        Record {
+            latch,
+            total_energy: energy,
+            x_cm: x,
+            y_cm: y,
+            x_cos: 0.1,
+            y_cos: 0.2,
+            weight: 1.0,
+            zlast,
+        }
+    }
+
+    fn write_phsp(path: &Path, header: &Header, records: &[Record]) {
+        let f = File::create(path).unwrap();
+        let mut writer = PHSPWriter::from(f, header).unwrap();
+        for r in records {
+            writer.write(r).unwrap();
+        }
+    }
+
+    #[test]
+    fn reweight_applies_radial_function_and_normalizes() {
+        let input = tmp_path("reweight_in");
+        let output = tmp_path("reweight_out");
+        let header = Header {
+            mode: *b"MODE0",
+            total_particles: 3,
+            total_photons: 3,
+            min_energy: 1.0,
+            max_energy: 1.0,
+            total_particles_in_source: 10.0,
+            record_size: 28,
+            using_zlast: false,
+        };
+        let mut records = vec![
+            make_record(0, 1.0, 0.0, 0.0, None),
+            make_record(0, 1.0, 1.0, 0.0, None),
+            make_record(0, 1.0, 2.0, 0.0, None),
+        ];
+        for r in records.iter_mut() {
+            r.weight = 2.0;
+            r.x_cos = 0.0;
+            r.y_cos = 0.0;
+        }
+        write_phsp(&input, &header, &records);
+
+        reweight(&input, &output, &|r| r + 1.0, 10, 5.0).unwrap();
+
+        let reader = PHSPReader::from(File::open(&output).unwrap()).unwrap();
+        let out: Vec<Record> = reader.map(|r| r.unwrap()).collect();
+        let _ = remove_file(&input);
+        let _ = remove_file(&output);
+
+        // sum_old = 6, sum_new = 2*1 + 2*2 + 2*3 = 12, factor = 0.5
+        // expected = original_weight * f(r) * factor = 2 * (r+1) * 0.5 = r + 1
+        let expected = [1.0_f32, 2.0, 3.0];
+        for (i, r) in out.iter().enumerate() {
+            assert!(
+                (r.weight - expected[i]).abs() < 1e-4,
+                "record {}: expected weight {}, got {}",
+                i,
+                expected[i],
+                r.weight
+            );
+        }
+    }
+
+    #[test]
+    fn sample_combine_uses_abs_energy_for_min_max() {
+        let input = tmp_path("sample_in");
+        let output = tmp_path("sample_out");
+        let header = Header {
+            mode: *b"MODE0",
+            total_particles: 3,
+            total_photons: 3,
+            min_energy: 0.5,
+            max_energy: 3.0,
+            total_particles_in_source: 10.0,
+            record_size: 28,
+            using_zlast: false,
+        };
+        let records = vec![
+            make_record(0, 0.5, 0.0, 0.0, None),
+            make_record(0, -3.0, 0.0, 0.0, None),
+            make_record(0, 1.5, 0.0, 0.0, None),
+        ];
+        write_phsp(&input, &header, &records);
+
+        sample_combine(&[&input], &output, 1.0, 0).unwrap();
+
+        let reader = PHSPReader::from(File::open(&output).unwrap()).unwrap();
+        let got = reader.header;
+        let _ = remove_file(&input);
+        let _ = remove_file(&output);
+
+        assert_eq!(got.total_particles, 3);
+        assert!(
+            (got.max_energy - 3.0).abs() < 1e-5,
+            "max_energy should be 3.0 (abs of -3.0), got {}",
+            got.max_energy
+        );
+        assert!(
+            (got.min_energy - 0.5).abs() < 1e-5,
+            "min_energy should be 0.5, got {}",
+            got.min_energy
+        );
+    }
+
+    #[test]
+    fn crossed_multiple_is_independent_of_charged() {
+        let mut r = make_record(0, 1.0, 0.0, 0.0, None);
+        r.latch = 1 << 30;
+        assert!(r.charged());
+        assert!(
+            !r.crossed_multiple(),
+            "crossed_multiple should be bit 31, distinct from charged (bit 30)"
+        );
+
+        r.latch = 1 << 31;
+        assert!(!r.charged());
+        assert!(r.crossed_multiple(), "bit 31 should mean crossed_multiple");
+    }
+
+    #[test]
+    fn transform_uses_original_z_cos_for_y_row() {
+        let mut record = make_record(0, 1.0, 0.0, 0.0, None);
+        record.x_cos = 0.6;
+        record.y_cos = 0.0;
+        let original_z_cos = record.z_cos();
+        let matrix = [
+            [0.5, 0.0, 0.0],
+            [0.0, 1.0, 1.0],
+            [0.0, 0.0, 1.0],
+        ];
+        record.transform(&matrix);
+        let expected_y_cos = 1.0 * original_z_cos;
+        assert!(
+            (record.y_cos - expected_y_cos).abs() < 1e-5,
+            "expected y_cos {} (from original z_cos), got {}",
+            expected_y_cos,
+            record.y_cos
+        );
+    }
+
+    #[test]
+    fn similar_to_detects_negative_difference() {
+        let a = make_record(0, 1.0, 0.0, 0.0, None);
+        let mut b = make_record(0, 1.0, 0.0, 0.0, None);
+        b.x_cm = 100.0;
+        assert!(
+            !a.similar_to(&b),
+            "records with x_cm differing by 100 should not be similar"
+        );
+    }
+
+    #[test]
+    fn mode2_writer_preserves_zlast() {
+        let path = tmp_path("mode2_zlast");
+        let header = Header {
+            mode: *b"MODE2",
+            total_particles: 2,
+            total_photons: 1,
+            min_energy: 0.5,
+            max_energy: 2.0,
+            total_particles_in_source: 100.0,
+            record_size: 32,
+            using_zlast: true,
+        };
+        let r1 = make_record(0, 1.0, 0.0, 0.0, Some(7.25));
+        let r2 = make_record(1 << 30, 2.0, 1.0, 1.0, Some(-3.5));
+        write_phsp(&path, &header, &[r1, r2]);
+
+        let reader = PHSPReader::from(File::open(&path).unwrap()).unwrap();
+        let records: Vec<Record> = reader.map(|r| r.unwrap()).collect();
+        let _ = remove_file(&path);
+
+        assert_eq!(records.len(), 2);
+        assert_eq!(records[0].zlast, Some(7.25), "first zlast not preserved");
+        assert_eq!(records[1].zlast, Some(-3.5), "second zlast not preserved");
+    }
 }

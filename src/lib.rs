@@ -1,7 +1,3 @@
-extern crate byteorder;
-extern crate float_cmp;
-extern crate rand;
-
 use std::fmt;
 use std::fs::{remove_file, File, OpenOptions};
 use std::io;
@@ -11,11 +7,11 @@ use std::path::Path;
 
 use byteorder::{ByteOrder, LittleEndian};
 use float_cmp::ApproxEqUlps;
-use rand::{rngs::StdRng, seq::SliceRandom, Rng, SeedableRng};
+use rand::{RngExt, SeedableRng, rngs::StdRng, seq::SliceRandom};
 
 const HEADER_LENGTH: usize = 25;
 const MAX_RECORD_LENGTH: usize = 32;
-const BUFFER_CAPACITY: usize = 1 * 1024 * 1024;
+const BUFFER_CAPACITY: usize = 1024 * 1024;
 const MODE_LENGTH: usize = 5;
 const BATCHES: usize = 128; // too high and one hits ulimit (around 1024)
 
@@ -107,7 +103,7 @@ impl PHSPReader {
         let mut mode = [0; MODE_LENGTH];
         mode.clone_from_slice(&buffer[0..5]);
         let header = Header {
-            mode: mode,
+            mode,
             total_particles: LittleEndian::read_i32(&buffer[5..9]),
             total_photons: LittleEndian::read_i32(&buffer[9..13]),
             max_energy: LittleEndian::read_f32(&buffer[13..17]),
@@ -134,8 +130,8 @@ impl PHSPReader {
         }
         reader.consume(header.record_size as usize - HEADER_LENGTH);
         Ok(PHSPReader {
-            reader: reader,
-            header: header,
+            reader,
+            header,
             next_record: 0,
         })
     }
@@ -189,7 +185,7 @@ impl PHSPWriter {
         writer.write_all(&buffer[..header.record_size as usize])?;
         Ok(PHSPWriter {
             header: *header,
-            writer: writer,
+            writer,
         })
     }
 
@@ -226,7 +222,7 @@ impl Header {
                 .approx_eq_ulps(&other.total_particles_in_source, 2)
     }
     fn merge(&mut self, other: &Header) {
-        assert!(&self.mode == &other.mode, "Merge mode mismatch");
+        assert!(self.mode == other.mode, "Merge mode mismatch");
         self.total_particles = self
             .total_particles
             .checked_add(other.total_particles)
@@ -283,7 +279,7 @@ impl Record {
         (1.0 - (self.x_cos * self.x_cos + self.y_cos * self.y_cos)).sqrt()
     }
     pub fn first_scored_by_primary_history(&self) -> bool {
-        return self.total_energy.is_sign_negative();
+        self.total_energy.is_sign_negative()
     }
 
     fn translate(&mut self, x: f32, y: f32) {
@@ -338,10 +334,7 @@ pub fn randomize(path: &Path, seed: u64) -> EGSResult<()> {
     let mut records = Vec::with_capacity(max_per_batch);
     for path in batch_paths.iter() {
         for _ in 0..max_per_batch {
-            match reader.next() {
-                Some(record) => records.push(record.unwrap()),
-                None => (),
-            }
+            if let Some(record) = reader.next() { records.push(record.unwrap()) }
         }
         //let mut vec: Vec<Record> = records.collect();
 
@@ -357,29 +350,26 @@ pub fn randomize(path: &Path, seed: u64) -> EGSResult<()> {
             using_zlast: &reader.header.mode == b"MODE2",
             record_size: reader.header.record_size,
         };
-        let ofile = File::create(&path)?;
+        let ofile = File::create(path)?;
         let mut writer = PHSPWriter::from(ofile, &header)?;
         for record in records.iter() {
-            writer.write(&record)?;
+            writer.write(record)?;
         }
         records.clear();
     }
     drop(records);
     let mut readers = Vec::with_capacity(BATCHES);
     for path in batch_paths.iter() {
-        let ifile = File::open(&path)?;
+        let ifile = File::open(path)?;
         readers.push(PHSPReader::from(ifile)?);
     }
 
     let ofile = File::create(path)?;
     let mut writer = PHSPWriter::from(ofile, &header)?;
-    while readers.len() != 0 {
+    while !readers.is_empty() {
         readers.shuffle(&mut rng);
         for reader in readers.iter_mut() {
-            match reader.next() {
-                Some(record) => writer.write(&record.unwrap())?,
-                None => (),
-            }
+            if let Some(record) = reader.next() { writer.write(&record.unwrap())? }
         }
         readers.retain(|r| !r.exhausted());
     }
@@ -390,7 +380,7 @@ pub fn randomize(path: &Path, seed: u64) -> EGSResult<()> {
 }
 
 pub fn combine(input_paths: &[&Path], output_path: &Path, delete: bool) -> EGSResult<()> {
-    assert!(input_paths.len() > 0, "Cannot combine zero files");
+    assert!(!input_paths.is_empty(), "Cannot combine zero files");
     let reader = PHSPReader::from(File::open(input_paths[0])?)?;
     let mut final_header = reader.header;
     for path in input_paths[1..].iter() {
@@ -455,7 +445,7 @@ pub fn compare(path1: &Path, path2: &Path) -> EGSResult<()> {
 }
 
 pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: f64, seed: u64) -> EGSResult<()> {
-    assert!(ipaths.len() > 0, "Cannot combine zero files");
+    assert!(!ipaths.is_empty(), "Cannot combine zero files");
     let mut rng = StdRng::seed_from_u64(seed);
     let mut header = Header {
         mode: *b"MODE0",
@@ -473,7 +463,7 @@ pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: f64, seed: u64) -> E
         assert!(!reader.header.using_zlast);
         println!("Found {} particles", reader.header.total_particles);
         header.total_particles_in_source += reader.header.total_particles_in_source;
-        let records = reader.filter(|_| rng.gen_bool(rate));
+        let records = reader.filter(|_| rng.random_bool(rate));
         for record in records.map(|r| r.unwrap()) {
             header.total_particles = header
                 .total_particles
@@ -493,7 +483,11 @@ pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: f64, seed: u64) -> E
     header.total_particles_in_source *= rate as f32;
     drop(writer);
     // write out the header
-    let ofile = OpenOptions::new().write(true).create(true).open(opath)?;
+    let ofile = OpenOptions::new()
+        .write(true)
+        .create(true)
+        .truncate(false)
+        .open(opath)?;
     PHSPWriter::from(ofile, &header)?;
     Ok(())
 }
@@ -501,18 +495,18 @@ pub fn sample_combine(ipaths: &[&Path], opath: &Path, rate: f64, seed: u64) -> E
 pub fn translate(input_path: &Path, output_path: &Path, x: f32, y: f32) -> EGSResult<()> {
     let ifile = File::open(input_path)?;
     let reader = PHSPReader::from(ifile)?;
-    let ofile;
-    if input_path == output_path {
+    let ofile = if input_path == output_path {
         println!(
             "Translating {} in place by ({}, {})",
             input_path.display(),
             x,
             y
         );
-        ofile = OpenOptions::new()
+        OpenOptions::new()
             .write(true)
             .create(true)
-            .open(output_path)?;
+            .truncate(false)
+            .open(output_path)?
     } else {
         println!(
             "Translating {} by ({}, {}) and saving to {}",
@@ -521,8 +515,8 @@ pub fn translate(input_path: &Path, output_path: &Path, x: f32, y: f32) -> EGSRe
             y,
             output_path.display()
         );
-        ofile = File::create(output_path)?;
-    }
+        File::create(output_path)?
+    };
     let mut writer = PHSPWriter::from(ofile, &reader.header)?;
     let n_particles = reader.header.total_particles;
     let mut records_translated = 0;
@@ -541,27 +535,26 @@ pub fn translate(input_path: &Path, output_path: &Path, x: f32, y: f32) -> EGSRe
 pub fn transform(input_path: &Path, output_path: &Path, matrix: &[[f32; 3]; 3]) -> EGSResult<()> {
     let ifile = File::open(input_path)?;
     let reader = PHSPReader::from(ifile)?;
-    let ofile;
-    if input_path == output_path {
+    let ofile = if input_path == output_path {
         println!("Transforming {} in place", input_path.display());
-        ofile = OpenOptions::new()
+        OpenOptions::new()
             .write(true)
             .create(true)
-            .open(output_path)?;
+            .truncate(false)
+            .open(output_path)?
     } else {
-        // different path (create/truncate destination)
         println!(
             "Transforming {} and saving to {}",
             input_path.display(),
             output_path.display()
         );
-        ofile = File::create(output_path)?;
-    }
+        File::create(output_path)?
+    };
     let mut writer = PHSPWriter::from(ofile, &reader.header)?;
     let n_particles = reader.header.total_particles;
     let mut records_transformed = 0;
     for mut record in reader.map(|r| r.unwrap()) {
-        record.transform(&matrix);
+        record.transform(matrix);
         writer.write(&record)?;
         records_transformed += 1;
     }
@@ -580,17 +573,17 @@ pub fn reweight(
     max_radius: f32,
 ) -> EGSResult<()> {
     let input_file = File::open(input_path)?;
-    let output_file;
-    if input_path == output_path {
+    let output_file = if input_path == output_path {
         println!("Reweighting in-place");
-        output_file = OpenOptions::new()
+        OpenOptions::new()
             .write(true)
             .create(true)
-            .open(output_path)?;
+            .truncate(false)
+            .open(output_path)?
     } else {
         println!("Rewighting and saving to {}", output_path.display());
-        output_file = File::create(output_path)?;
-    }
+        File::create(output_path)?
+    };
     let reader1 = PHSPReader::from(input_file)?;
     let mut writer1 = PHSPWriter::from(output_file, &reader1.header)?;
     let bin_size = max_radius / number_bins as f32;
@@ -606,15 +599,15 @@ pub fn reweight(
     }
     drop(writer1);
     let ifile2 = File::open(input_path)?;
-    let ofile2;
-    if input_path == output_path {
-        ofile2 = OpenOptions::new()
+    let ofile2 = if input_path == output_path {
+        OpenOptions::new()
             .write(true)
             .create(true)
-            .open(output_path)?;
+            .truncate(false)
+            .open(output_path)?
     } else {
-        ofile2 = File::create(output_path)?;
-    }
+        File::create(output_path)?
+    };
     let reader2 = PHSPReader::from(ifile2)?;
     let mut writer2 = PHSPWriter::from(ofile2, &reader2.header)?;
     let factor = sum_old_weight / sum_new_weight;

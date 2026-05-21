@@ -1,6 +1,3 @@
-extern crate egsphsp;
-extern crate float_cmp;
-
 use float_cmp::ApproxEqUlps;
 use std::f64::consts;
 use std::fs::copy;
@@ -60,7 +57,7 @@ fn first_file_header_correct() {
         reader
             .header
             .total_particles_in_source
-            .approx_eq_ulps(&(10000.0 as f32), 2),
+            .approx_eq_ulps(&10000.0_f32, 2),
         
             "Total particles in source incorrect, found {:?}",
             reader.header.total_particles_in_source
@@ -106,7 +103,7 @@ fn second_file_header_correct() {
         reader
             .header
             .total_particles_in_source
-            .approx_eq_ulps(&(10000.0 as f32), 2),
+            .approx_eq_ulps(&10000.0_f32, 2),
         
             "Total particles in source incorrect, found {:?}",
             reader.header.total_particles_in_source
@@ -145,7 +142,7 @@ fn combined_file_header_correct() {
         reader
             .header
             .total_particles_in_source
-            .approx_eq_ulps(&(10000.0 * 2.0 as f32), 2),
+            .approx_eq_ulps(&(10000.0 * 2.0_f32), 2),
         
             "Total particles in source incorrect, found {:?}",
             reader.header.total_particles_in_source
@@ -200,7 +197,7 @@ fn combine_samples() {
         
     );
     assert!(
-        (reader.header.total_particles_in_source - expected_in_source as f32) < 100 as f32,
+        (reader.header.total_particles_in_source - expected_in_source as f32) < 100_f32,
         
             "expected {} particles in source but found {}",
             expected_in_source, reader.header.total_particles_in_source
@@ -223,12 +220,12 @@ fn combine_delete_flag() {
     let input_path = Path::new("test_data/first.egsphsp1");
     let mut input_paths = Vec::new();
     for i in 0..10 {
-        let path = String::from(format!("test_data/source{}.egsphsp1", i));
+        let path = format!("test_data/source{}.egsphsp1", i);
         copy(input_path, &path).unwrap();
         input_paths.push(path);
     }
     let output_path = Path::new("test_data/test_combined_deletes.egsphsp1");
-    let paths: Vec<&Path> = input_paths.iter().map(|s| Path::new(s)).collect();
+    let paths: Vec<&Path> = input_paths.iter().map(Path::new).collect();
     combine(&paths, output_path, true).unwrap();
     for path in input_paths.iter() {
         assert!(File::open(path).is_err());

@@ -1,6 +1,3 @@
-extern crate clap;
-extern crate egsphsp;
-
 use std::f32;
 use std::fs::File;
 use std::path::Path;
@@ -15,7 +12,7 @@ use egsphsp::{
 
 fn main() {
     let matches = Command::new("beamdpr")
-        .version("1.0.7")
+        .version(env!("CARGO_PKG_VERSION"))
         .author("Henry B. <henry.baxter@gmail.com>")
         .about("Combine and transform egsphsp (EGS phase space) \
                 files")
@@ -247,26 +244,26 @@ fn main() {
         for field in fields.iter() {
             print!("{:<16}", field);
         }
-        println!("");
+        println!();
         for record in reader.take(number).map(|r| r.unwrap()) {
             for field in fields.iter() {
-                match field {
-                    &"weight" => print!("{:<16}", record.get_weight()),
-                    &"energy" => print!("{:<16}", record.total_energy()),
-                    &"x" => print!("{:<16}", record.x_cm),
-                    &"y" => print!("{:<16}", record.y_cm),
-                    &"x_cos" => print!("{:<16}", record.x_cos),
-                    &"y_cos" => print!("{:<16}", record.y_cos),
-                    &"produced" => print!("{:<16}", record.bremsstrahlung_or_annihilation()),
-                    &"charged" => print!("{:<16}", record.charged()),
-                    &"r" => print!(
+                match *field {
+                    "weight" => print!("{:<16}", record.get_weight()),
+                    "energy" => print!("{:<16}", record.total_energy()),
+                    "x" => print!("{:<16}", record.x_cm),
+                    "y" => print!("{:<16}", record.y_cm),
+                    "x_cos" => print!("{:<16}", record.x_cos),
+                    "y_cos" => print!("{:<16}", record.y_cos),
+                    "produced" => print!("{:<16}", record.bremsstrahlung_or_annihilation()),
+                    "charged" => print!("{:<16}", record.charged()),
+                    "r" => print!(
                         "{:<16}",
                         (record.x_cm * record.x_cm + record.y_cm * record.y_cm).sqrt()
                     ),
                     _ => panic!("Unknown field {}", field),
                 };
             }
-            println!("");
+            println!();
         }
         Ok(())
     } else if subcommand == "reweight" {
@@ -295,7 +292,7 @@ fn main() {
         let input_paths: Vec<&Path> = sub_matches
             .get_many::<String>("input")
             .unwrap()
-            .map(|s| Path::new(s))
+            .map(Path::new)
             .collect();
         let output_path = Path::new(sub_matches.get_one::<String>("output").unwrap());
         let rate = 1.0
@@ -453,7 +450,7 @@ fn main() {
     match result {
         Ok(()) => exit(0),
         Err(err) => {
-            println!("Error: {}", err.to_string());
+            println!("Error: {}", err);
             exit(1);
         }
     };

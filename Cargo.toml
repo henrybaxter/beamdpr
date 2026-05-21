@@ -4,7 +4,9 @@ name = "beamdpr"
 description = "Combine and transform egsphsp (EGS phase space) files for use with BEAMnrc"
 authors = ["Henry Baxter <henry.baxter@gmail.com>"]
 license = "MIT"
-version = "1.0.7"
+version = "1.1.0"
+edition = "2024"
+rust-version = "1.85"
 
 
 documentation = "https://github.com/henrybaxter/beamdpr"
@@ -16,8 +18,8 @@ keywords = ["egsphsp", "egsphsp1", "beamdp", "beamnrc", "egsnrc"]
 [dependencies]
 byteorder = "1"
 clap = "4"
-float-cmp = "0.9"
-rand = "0.8"
+float-cmp = "0.10"
+rand = "0.10"
 
 [lib]
 name = "egsphsp"

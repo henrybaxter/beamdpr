@@ -272,7 +272,7 @@ fn translate_operation() {
             
         );
     }
-    translate(output_path, output_path, x, y).unwrap();
+    translate(output_path, output_path, -x, -y).unwrap();
     compare(input_path, output_path).unwrap();
     remove_file(output_path).unwrap();
 }
